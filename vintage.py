@@ -1,13 +1,13 @@
 import streamlit as st
 import pandas as pd
+from dateutil.relativedelta import relativedelta
 
 # Configuración de la página
-st.set_page_config(page_title="Matriz de Ratio de Capital", layout="wide")
+st.set_page_config(page_title="Matriz de Capital por Fecha de Cierre", layout="wide")
 
 @st.cache_data
 def load_data():
     df = pd.read_parquet("vintage_acum.parquet")
-    # Convertir a datetime para filtrar
     if 'mes_apertura' in df.columns:
         df['mes_apertura'] = pd.to_datetime(df['mes_apertura'])
     return df
@@ -15,57 +15,60 @@ def load_data():
 try:
     df_raw = load_data()
 
-    st.title("📊 Matriz de Ratio: Saldo Capital / Capital Inicial")
-    st.markdown("Cálculo dinámico: `saldo_capital_total_cX / capital_cX` por cada mes de maduración.")
+    st.title("📊 Matriz de Capital: Fechas de Cierre Reales")
+    st.markdown("Columnas dinámicas calculadas desde la fecha máxima hacia atrás.")
 
-    # 1. Filtro de los últimos 24 meses
+    # 1. Definir la fecha base (Máximo de mes_apertura)
     fecha_max = df_raw['mes_apertura'].max()
-    fecha_inicio = fecha_max - pd.DateOffset(months=24)
-    df = df_raw[df_raw['mes_apertura'] >= fecha_inicio].copy()
-
-    # 2. Creación de la Matriz de Ratios
-    # Vamos a crear un nuevo DataFrame donde el índice sea el mes de apertura
-    df['mes_apertura_str'] = df['mes_apertura'].dt.strftime('%Y-%m')
     
-    # Preparamos una lista para almacenar los resultados por cada dif_meses
-    results = []
+    # Filtro de filas: Últimas 24 cosechas
+    fecha_inicio_filas = fecha_max - pd.DateOffset(months=24)
+    df = df_raw[df_raw['mes_apertura'] >= fecha_inicio_filas].copy()
+    df['mes_apertura_str'] = df['mes_apertura'].dt.strftime('%Y-%m')
 
-    # Iteramos para crear las columnas de dif_meses 0 a 24 (según el patrón c1 a c25)
-    # Nota: Siguiendo tu patrón dif_meses=0 -> c1, dif_meses=1 -> c2...
-    for i in range(25):  # Esto generará desde dif_meses 0 hasta 24
+    # 2. Construcción de la Matriz con Nombres de Columnas Dinámicos
+    results = []
+    nombres_columnas = {}
+
+    for i in range(25):  # De 0 a 24 meses
+        # Nombre de las columnas de origen en el parquet
         col_num = f'saldo_capital_total_c{i+1}'
         col_den = f'capital_c{i+1}'
         
+        # Calcular la fecha de cierre para esta columna (dif_meses = i)
+        # Fecha máxima menos i meses
+        fecha_columna = fecha_max - relativedelta(months=i)
+        nombre_col_real = fecha_columna.strftime('%Y-%m')
+
         if col_num in df.columns and col_den in df.columns:
-            # Calculamos el ratio para esta maduración específica
-            # Usamos sum() por si hay múltiples registros para el mismo mes_apertura
+            # Cálculo del ratio
             temp = df.groupby('mes_apertura_str').apply(
-                lambda x: x[col_num].sum() / x[col_den].sum() if x[col_den].sum() != 0 else 0
+                lambda x: x[col_num].sum() / x[col_den].sum() if x[col_den].sum() != 0 else None
             )
-            temp.name = i # El nombre de la serie será el dif_meses (0, 1, 2...)
+            temp.name = nombre_col_real
             results.append(temp)
 
     if results:
-        # Unimos todos los meses en una sola matriz
-        matriz_ratios = pd.concat(results, axis=1)
-        matriz_ratios = matriz_ratios.sort_index(ascending=False)
-
-        # 3. Mostrar la Matriz
-        st.subheader("Visualización de Ratios (Porcentaje)")
+        # Unimos las series en un DataFrame
+        matriz_final = pd.concat(results, axis=1)
         
-        # Aplicamos un gradiente de color para identificar caídas de saldo fácilmente
+        # Ordenamos las filas (cosechas) de la más reciente a la más antigua
+        matriz_final = matriz_final.sort_index(ascending=False)
+
+        # 3. Mostrar la Matriz en Streamlit
+        st.subheader("Ratio de Capital por Mes de Calendario")
+        
+        # Estilo de la tabla
         st.dataframe(
-            matriz_ratios.style.format("{:.2%}")
-            .background_gradient(cmap='RdYlGn', axis=None), # Verde es más capital, rojo es menos
+            matriz_final.style.format("{:.2%}", na_rep="-")
+            .background_gradient(cmap='RdYlGn', axis=None),
             use_container_width=True
         )
 
-        # 4. Notas técnicas
-        st.caption(f"Datos filtrados desde {fecha_inicio.strftime('%Y-%m')} hasta {fecha_max.strftime('%Y-%m')}.")
-        st.info("La fórmula aplicada es: (Suma de saldo_capital_total_cX) / (Suma de capital_cX) para cada celda.")
+        st.caption(f"Nota: Las columnas representan el cierre de mes calculado desde el máximo ({fecha_max.strftime('%Y-%m')}).")
 
     else:
-        st.error("No se encontraron columnas con el formato 'saldo_capital_total_cX' o 'capital_cX'.")
+        st.error("No se encontraron las columnas 'c1', 'c2', etc. en el archivo.")
 
 except Exception as e:
-    st.error(f"Error en el procesamiento: {e}")
+    st.error(f"Error técnico: {e}")
