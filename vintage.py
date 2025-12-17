@@ -1,68 +1,53 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
 
-# Configuración inicial
-st.set_page_config(page_title="Vintage Credit Analysis", layout="wide")
+# Configuración de la página
+st.set_page_config(page_title="Reporte de Saldos", layout="wide")
 
 @st.cache_data
 def load_data():
-    # Cargamos el parquet que subiste a GitHub con LFS
+    # Carga del archivo parquet
     df = pd.read_parquet("vintage_acum.parquet")
-    # Aseguramos que las columnas de fecha o periodos sean strings o fechas para el orden
     return df
 
 try:
     df = load_data()
-    
-    st.title("📊 Monitor de Cosechas (Vintage Analysis)")
-    st.sidebar.header("Configuración de la Vista")
 
-    # Identificación automática de columnas (puedes ajustar los nombres)
-    cols = df.columns.tolist()
-    
-    with st.sidebar:
-        st.subheader("Variables")
-        cohor_col = st.selectbox("Columna de Cosecha (Cohorte):", cols, index=0)
-        madur_col = st.selectbox("Meses de Maduración:", cols, index=1)
-        value_col = st.selectbox("Métrica (Mora/Monto):", cols, index=2)
-        
-        st.divider()
-        st.info("Este dashboard lee directamente el archivo procesado en Parquet.")
+    st.title("📋 Resumen de Saldos por Mes")
+    st.markdown("Cálculo de la suma de saldo capital total agrupado por periodo.")
 
-    # --- FILA 1: Gráfico de Líneas Interactivo ---
-    st.subheader("📈 Curvas de Maduración Acumulada")
-    fig_line = px.line(
-        df, 
-        x=madur_col, 
-        y=value_col, 
-        color=cohor_col,
-        markers=True,
-        template="plotly_white",
-        labels={madur_col: "Meses tras Apertura", value_col: "Tasa Acumulada (%)"}
+    # 1. Agrupación y Cálculo
+    # Agrupamos por 'mes_bperturb' y sumamos 'saldo_capital_total'
+    resumen_saldos = df.groupby('mes_bperturb')['saldo_capital_total'].sum().reset_index()
+
+    # Ordenar por mes para que la tabla sea lógica
+    resumen_saldos = resumen_saldos.sort_values('mes_bperturb', ascending=False)
+
+    # 2. Formato de la tabla
+    # Renombramos columnas para que se vean mejor en la vista
+    resumen_saldos.columns = ['Mes (bperturb)', 'Suma Saldo Capital Total']
+
+    # 3. Mostrar métricas destacadas (opcional)
+    total_general = resumen_saldos['Suma Saldo Capital Total'].sum()
+    st.metric("Saldo Total General", f"${total_general:,.2f}")
+
+    # 4. Mostrar la tabla en Streamlit
+    st.subheader("Tabla de Datos Agrupados")
+    st.dataframe(
+        resumen_saldos.style.format({"Suma Saldo Capital Total": "${:,.2f}"}),
+        use_container_width=True,
+        hide_index=True
     )
-    st.plotly_chart(fig_line, use_container_width=True)
 
-    # --- FILA 2: Matriz de Calor (Heatmap) ---
-    st.subheader("🌡️ Matriz de Comportamiento")
-    
-    # Pivotamos los datos para crear la matriz
-    pivot_df = df.pivot(index=cohor_col, columns=madur_col, values=value_col)
-    
-    fig_heat = px.imshow(
-        pivot_df,
-        labels=dict(x="Meses de Maduración", y="Cosecha", color="Valor"),
-        x=pivot_df.columns,
-        y=pivot_df.index,
-        color_continuous_scale='YlOrRd' # De amarillo a rojo (típico de riesgo)
+    # 5. Botón para descargar este resumen
+    csv = resumen_saldos.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        label="Descargar este resumen como CSV",
+        data=csv,
+        file_name='resumen_saldos_vintage.csv',
+        mime='text/csv',
     )
-    st.plotly_chart(fig_heat, use_container_width=True)
-
-    # --- FILA 3: Tabla de Datos ---
-    if st.checkbox("Ver Tabla de Datos Completa"):
-        st.dataframe(df, use_container_width=True)
 
 except Exception as e:
-    st.error(f"Error al cargar el archivo: {e}")
-    st.warning("Asegúrate de que 'vintage_acum.parquet' esté en la carpeta 'Vintage'.")
+    st.error(f"Error al procesar los datos: {e}")
+    st.info("Asegúrate de que las columnas 'mes_bperturb' y 'saldo_capital_total' existan en tu archivo.")
