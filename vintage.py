@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 
 # Configuración de la página
-st.set_page_config(page_title="Reporte de Saldos", layout="wide")
+st.set_page_config(page_title="Reporte de Saldos de Capital", layout="wide")
 
 @st.cache_data
 def load_data():
@@ -13,41 +13,46 @@ def load_data():
 try:
     df = load_data()
 
-    st.title("📋 Resumen de Saldos por Mes")
-    st.markdown("Cálculo de la suma de saldo capital total agrupado por periodo.")
+    st.title("📋 Resumen de Saldos por Mes de Perturbación")
+    
+    # 1. Agrupación y Cálculo con el nombre de variable correcto
+    # Agrupamos por 'Mes_BperturB' y sumamos 'saldo_capital_total'
+    resumen_saldos = df.groupby('Mes_BperturB')['saldo_capital_total'].sum().reset_index()
 
-    # 1. Agrupación y Cálculo
-    # Agrupamos por 'mes_bperturb' y sumamos 'saldo_capital_total'
-    resumen_saldos = df.groupby('mes_bperturb')['saldo_capital_total'].sum().reset_index()
+    # Ordenar por mes (del más reciente al más antiguo)
+    resumen_saldos = resumen_saldos.sort_values('Mes_BperturB', ascending=False)
 
-    # Ordenar por mes para que la tabla sea lógica
-    resumen_saldos = resumen_saldos.sort_values('mes_bperturb', ascending=False)
+    # 2. Visualización de métricas clave arriba de la tabla
+    total_acumulado = resumen_saldos['saldo_capital_total'].sum()
+    promedio_mensual = resumen_saldos['saldo_capital_total'].mean()
 
-    # 2. Formato de la tabla
-    # Renombramos columnas para que se vean mejor en la vista
-    resumen_saldos.columns = ['Mes (bperturb)', 'Suma Saldo Capital Total']
+    col1, col2 = st.columns(2)
+    col1.metric("Saldo Capital Total", f"${total_acumulado:,.2f}")
+    col2.metric("Promedio por Mes", f"${promedio_mensual:,.2f}")
 
-    # 3. Mostrar métricas destacadas (opcional)
-    total_general = resumen_saldos['Suma Saldo Capital Total'].sum()
-    st.metric("Saldo Total General", f"${total_general:,.2f}")
-
-    # 4. Mostrar la tabla en Streamlit
-    st.subheader("Tabla de Datos Agrupados")
+    # 3. Mostrar la tabla formateada
+    st.subheader("Detalle por Mes_BperturB")
+    
+    # Aplicamos formato de moneda a la columna de saldo
     st.dataframe(
-        resumen_saldos.style.format({"Suma Saldo Capital Total": "${:,.2f}"}),
+        resumen_saldos.style.format({
+            "saldo_capital_total": "${:,.2f}"
+        }),
         use_container_width=True,
         hide_index=True
     )
 
-    # 5. Botón para descargar este resumen
+    # 4. Opción para exportar
     csv = resumen_saldos.to_csv(index=False).encode('utf-8')
     st.download_button(
-        label="Descargar este resumen como CSV",
+        label="📥 Descargar resumen en CSV",
         data=csv,
-        file_name='resumen_saldos_vintage.csv',
+        file_name='resumen_capital_por_mes.csv',
         mime='text/csv',
     )
 
+except KeyError as e:
+    st.error(f"Error: No se encontró la columna {e} en el archivo.")
+    st.info("Verifica que las columnas se llamen exactamente 'Mes_BperturB' y 'saldo_capital_total'.")
 except Exception as e:
-    st.error(f"Error al procesar los datos: {e}")
-    st.info("Asegúrate de que las columnas 'mes_bperturb' y 'saldo_capital_total' existan en tu archivo.")
+    st.error(f"Ocurrió un error inesperado: {e}")
