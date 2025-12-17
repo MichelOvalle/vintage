@@ -3,7 +3,7 @@ import pandas as pd
 from dateutil.relativedelta import relativedelta
 
 # Configuración de la página
-st.set_page_config(page_title="Matriz de Capital por Fecha de Cierre", layout="wide")
+st.set_page_config(page_title="Matriz de Capital - Orden Específico", layout="wide")
 
 @st.cache_data
 def load_data():
@@ -15,10 +15,9 @@ def load_data():
 try:
     df_raw = load_data()
 
-    st.title("📊 Matriz de Capital: Fechas de Cierre Reales")
-    st.markdown("Columnas dinámicas calculadas desde la fecha máxima hacia atrás.")
-
-    # 1. Definir la fecha base (Máximo de mes_apertura)
+    st.title("📊 Matriz de Capital: Orden Personalizado")
+    
+    # 1. Definir la fecha base
     fecha_max = df_raw['mes_apertura'].max()
     
     # Filtro de filas: Últimas 24 cosechas
@@ -26,20 +25,17 @@ try:
     df = df_raw[df_raw['mes_apertura'] >= fecha_inicio_filas].copy()
     df['mes_apertura_str'] = df['mes_apertura'].dt.strftime('%Y-%m')
 
-    # 2. Construcción de la Matriz con Nombres de Columnas Dinámicos
+    # 2. Construcción de la Matriz
     results = []
 
-    for i in range(25):  # De 0 a 24 meses
-        # Nombre de las columnas de origen en el parquet
+    for i in range(25):
         col_num = f'saldo_capital_total_c{i+1}'
         col_den = f'capital_c{i+1}'
         
-        # Calcular la fecha de cierre para esta columna
         fecha_columna = fecha_max - relativedelta(months=i)
         nombre_col_real = fecha_columna.strftime('%Y-%m')
 
         if col_num in df.columns and col_den in df.columns:
-            # Cálculo del ratio
             temp = df.groupby('mes_apertura_str').apply(
                 lambda x: x[col_num].sum() / x[col_den].sum() if x[col_den].sum() != 0 else None
             )
@@ -47,28 +43,32 @@ try:
             results.append(temp)
 
     if results:
-        # Unimos las series en un DataFrame
         matriz_final = pd.concat(results, axis=1)
         
-        # --- MEJORA DE ORDEN ---
-        # Ordenamos columnas cronológicamente (Ene -> Feb -> Mar)
-        matriz_final = matriz_final.reindex(sorted(matriz_final.columns), axis=1)
-        # Ordenamos filas de la más reciente a la más antigua (Arriba el presente)
-        matriz_final = matriz_final.sort_index(ascending=False)
-
-        # 3. Mostrar la Matriz en Streamlit (Sin Heatmap)
-        st.subheader("Ratio de Capital por Mes de Calendario")
+        # --- AJUSTE DE ÓRDENES SOLICITADOS ---
         
-        # Estilo de la tabla con formato porcentaje, pero sin gradiente de color
+        # 1. Filas en orden ASCENDENTE (de la fecha más vieja a la más nueva)
+        matriz_final = matriz_final.sort_index(ascending=True)
+        
+        # 2. Columnas en orden DESCENDENTE (de la más reciente a la más antigua)
+        # Como las columnas se generaron de 0 a 24 (Reciente -> Antigua), 
+        # simplemente nos aseguramos de mantener ese orden original de la lista 'results'
+        columnas_ordenadas = sorted(matriz_final.columns, reverse=True)
+        matriz_final = matriz_final.reindex(columns=columnas_ordenadas)
+
+        # 3. Mostrar la Matriz en Streamlit
+        st.subheader("Desglose de Capital")
+        st.write("Filas: Antiguo → Reciente | Columnas: Reciente → Antiguo")
+        
         st.dataframe(
             matriz_final.style.format("{:.2%}", na_rep="-"),
             use_container_width=True
         )
 
-        st.caption(f"Nota: Las columnas representan el cierre de mes calculado desde el máximo ({fecha_max.strftime('%Y-%m')}).")
+        st.caption(f"Referencia: Fecha más reciente en datos es {fecha_max.strftime('%Y-%m')}")
 
     else:
-        st.error("No se encontraron las columnas 'c1', 'c2', etc. en el archivo.")
+        st.error("No se encontraron las columnas 'c1', 'c2', etc.")
 
 except Exception as e:
     st.error(f"Error técnico: {e}")
