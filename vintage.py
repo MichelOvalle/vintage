@@ -28,15 +28,13 @@ try:
 
     # 2. Construcción de la Matriz con Nombres de Columnas Dinámicos
     results = []
-    nombres_columnas = {}
 
     for i in range(25):  # De 0 a 24 meses
         # Nombre de las columnas de origen en el parquet
         col_num = f'saldo_capital_total_c{i+1}'
         col_den = f'capital_c{i+1}'
         
-        # Calcular la fecha de cierre para esta columna (dif_meses = i)
-        # Fecha máxima menos i meses
+        # Calcular la fecha de cierre para esta columna
         fecha_columna = fecha_max - relativedelta(months=i)
         nombre_col_real = fecha_columna.strftime('%Y-%m')
 
@@ -52,16 +50,18 @@ try:
         # Unimos las series en un DataFrame
         matriz_final = pd.concat(results, axis=1)
         
-        # Ordenamos las filas (cosechas) de la más reciente a la más antigua
+        # --- MEJORA DE ORDEN ---
+        # Ordenamos columnas cronológicamente (Ene -> Feb -> Mar)
+        matriz_final = matriz_final.reindex(sorted(matriz_final.columns), axis=1)
+        # Ordenamos filas de la más reciente a la más antigua (Arriba el presente)
         matriz_final = matriz_final.sort_index(ascending=False)
 
-        # 3. Mostrar la Matriz en Streamlit
+        # 3. Mostrar la Matriz en Streamlit (Sin Heatmap)
         st.subheader("Ratio de Capital por Mes de Calendario")
         
-        # Estilo de la tabla
+        # Estilo de la tabla con formato porcentaje, pero sin gradiente de color
         st.dataframe(
-            matriz_final.style.format("{:.2%}", na_rep="-")
-            .background_gradient(cmap='RdYlGn', axis=None),
+            matriz_final.style.format("{:.2%}", na_rep="-"),
             use_container_width=True
         )
 
