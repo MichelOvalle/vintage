@@ -123,7 +123,7 @@ try:
     df_24['mes_apertura_str'] = df_24['mes_apertura'].dt.strftime('%Y-%m')
 
     # --- TABS ---
-    tab1, tab2, tab3 = st.tabs(["📋 Matrices Vintage", "📈 Curvas, C2 y Saldo", "📍 Sucursales (PR)"])
+    tab1, tab2, tab3 = st.tabs(["📋 Matrices Vintage", "📈 Curvas, C2 y Saldo", "📍 Detalle por Sucursal"])
 
     df_pr = df_24[df_24['uen'] == 'PR']
     df_solidar = df_24[df_24['uen'] == 'SOLIDAR']
@@ -176,27 +176,44 @@ try:
             st.plotly_chart(fig_stack, use_container_width=True)
 
     with tab3:
-        st.title("📍 Análisis de Riesgo por Sucursal (UEN: PR)")
+        st.title("📍 Detalle Numérico por Sucursal")
         
-        if not df_pr.empty:
-            # Calculamos el Ratio C2 por Sucursal
-            df_suc_c2 = df_pr.groupby('nombre_sucursal').apply(
-                lambda x: x['saldo_capital_total_c2'].sum() / x['capital_c2'].sum() if x['capital_c2'].sum() > 0 else np.nan
-            ).reset_index()
-            df_suc_c2.columns = ['Sucursal', 'Ratio C2']
-            
-            # Ordenamos por riesgo (descendente)
-            df_suc_c2 = df_suc_c2.sort_values(by='Ratio C2', ascending=False).dropna()
+        col_pr, col_sol = st.columns(2)
+        
+        with col_pr:
+            st.subheader("UEN: PR (Ratio C2)")
+            if not df_pr.empty:
+                df_suc_pr = df_pr.groupby('nombre_sucursal').apply(
+                    lambda x: x['saldo_capital_total_c2'].sum() / x['capital_c2'].sum() if x['capital_c2'].sum() > 0 else np.nan
+                ).reset_index()
+                df_suc_pr.columns = ['Sucursal', 'Ratio C2']
+                df_suc_pr = df_suc_pr.sort_values(by='Ratio C2', ascending=False).dropna()
+                
+                st.dataframe(
+                    df_suc_pr.style.format({'Ratio C2': '{:.2%}'})
+                    .background_gradient(cmap='RdYlGn_r', subset=['Ratio C2']),
+                    use_container_width=True
+                )
+            else:
+                st.info("Sin datos para PR")
 
-            # Detalle Numérico
-            st.subheader("Detalle Numérico")
-            st.dataframe(
-                df_suc_c2.style.format({'Ratio C2': '{:.2%}'})
-                .background_gradient(cmap='RdYlGn_r', subset=['Ratio C2']),
-                use_container_width=True
-            )
-        else:
-            st.warning("No hay datos disponibles para la UEN: PR en el periodo seleccionado.")
+        with col_sol:
+            st.subheader("UEN: SOLIDAR (Ratio C1)")
+            if not df_solidar.empty:
+                # Nota: Para SOLIDAR usamos C1 y el prefijo de saldo 890
+                df_suc_sol = df_solidar.groupby('nombre_sucursal').apply(
+                    lambda x: x['saldo_capital_total_890_c1'].sum() / x['capital_c1'].sum() if x['capital_c1'].sum() > 0 else np.nan
+                ).reset_index()
+                df_suc_sol.columns = ['Sucursal', 'Ratio C1']
+                df_suc_sol = df_suc_sol.sort_values(by='Ratio C1', ascending=False).dropna()
+                
+                st.dataframe(
+                    df_suc_sol.style.format({'Ratio C1': '{:.2%}'})
+                    .background_gradient(cmap='RdYlGn_r', subset=['Ratio C1']),
+                    use_container_width=True
+                )
+            else:
+                st.info("Sin datos para SOLIDAR")
 
     st.caption(f"Referencia: Datos actualizados hasta {fecha_max.strftime('%Y-%m')}.")
 
