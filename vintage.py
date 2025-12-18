@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from dateutil.relativedelta import relativedelta
 import numpy as np
-import plotly.express as px
+import plotly.graph_objects as go
 
 # 1. Configuración de la página
 st.set_page_config(page_title="Reporte Vintage Pro", layout="wide")
@@ -55,7 +55,7 @@ def renderizar_estilo(matriz_ratios, df_capital_total):
         'Máximo': matriz_ratios.max(axis=0),
         'Mínimo': matriz_ratios.min(axis=0)
     }).T 
-    matriz_con_stats = pd.concat([matriz_con_stats := matriz_final, stats]).replace({np.nan: None})
+    matriz_con_stats = pd.concat([matriz_final, stats]).replace({np.nan: None})
     idx = pd.IndexSlice
     formatos = {col: "{:.2%}" for col in matriz_ratios.columns}
     formatos["Capital Total"] = "${:,.0f}"
@@ -93,10 +93,9 @@ try:
     df_base['mes_apertura_str'] = df_base['mes_apertura'].dt.strftime('%Y-%m')
 
     # --- TABS ---
-    tab1, tab2 = st.tabs(["📋 Matrices Vintage", "📈 Análisis de Tendencias"])
+    tab1, tab2 = st.tabs(["📋 Matrices Vintage", "📈 Tendencia Histórica"])
 
     with tab1:
-        # Lógica de matrices (PR y SOLIDAR)
         df_pr = df_base[df_base['uen'] == 'PR']
         m_ratios_pr, m_cap_pr = calcular_matriz_datos(df_pr, fecha_max, 'saldo_capital_total_c', 'capital_c')
         if m_ratios_pr is not None:
@@ -112,45 +111,63 @@ try:
             st.dataframe(renderizar_estilo(m_ratios_sol, m_cap_sol), use_container_width=True)
 
     with tab2:
-        st.title("Estado Actual de la Cartera")
-        
-        col_a, col_b = st.columns(2)
-        
-        with col_a:
-            if m_ratios_pr is not None:
-                # Tomamos la columna más reciente (el dato de hoy) para cada cosecha
-                ultima_col = m_ratios_pr.columns[0] 
-                df_hoy_pr = m_ratios_pr[ultima_col].reset_index()
-                df_hoy_pr.columns = ['Cosecha', 'Ratio']
-                
-                fig_pr = px.line(df_hoy_pr, x='Cosecha', y='Ratio', 
-                                title=f"Ratio Actual por Cosecha (PR) - Corte {ultima_col}",
-                                markers=True, color_discrete_sequence=['red'])
-                fig_pr.update_layout(yaxis_tickformat='.1%')
-                st.plotly_chart(fig_pr, use_container_width=True)
+        st.title("Evolución Histórica del Ratio")
+        st.markdown("Esta gráfica muestra el comportamiento del ratio a través del tiempo cronológico.")
 
-        with col_b:
-            if m_ratios_sol is not None:
-                ultima_col_sol = m_ratios_sol.columns[0]
-                df_hoy_sol = m_ratios_sol[ultima_col_sol].reset_index()
-                df_hoy_sol.columns = ['Cosecha', 'Ratio']
-                
-                fig_sol = px.line(df_hoy_sol, x='Cosecha', y='Ratio', 
-                                 title=f"Ratio Actual por Cosecha (SOLIDAR) - Corte {ultima_col_sol}",
-                                 markers=True, color_discrete_sequence=['blue'])
-                fig_sol.update_layout(yaxis_tickformat='.1%')
-                st.plotly_chart(fig_sol, use_container_width=True)
+        # Generamos la gráfica de tendencia
+        fig = go.Figure()
 
-        # Gráfico de barras de Capital Total combinado
-        st.subheader("Originación de Capital por UEN")
+        if m_ratios_pr is not None:
+            # Obtenemos la fila de 'Promedio' de la matriz PR
+            promedio_pr = m_ratios_pr.mean(axis=0).sort_index()
+            fig.add_trace(go.Scatter(
+                x=promedio_pr.index, 
+                y=promedio_pr.values,
+                mode='lines+markers',
+                name='Ratio Promedio PR',
+                line=dict(color='#1f77b4', width=3),
+                marker=dict(size=8)
+            ))
+
+        if m_ratios_sol is not None:
+            # Obtenemos la fila de 'Promedio' de la matriz SOLIDAR
+            promedio_sol = m_ratios_sol.mean(axis=0).sort_index()
+            fig.add_trace(go.Scatter(
+                x=promedio_sol.index, 
+                y=promedio_sol.values,
+                mode='lines+markers',
+                name='Ratio Promedio SOLIDAR',
+                line=dict(color='#ff7f0e', width=3),
+                marker=dict(size=8)
+            ))
+
+        fig.update_layout(
+            hovermode="x unified",
+            plot_bgcolor='white',
+            paper_bgcolor='white',
+            font=dict(color='black'),
+            xaxis=dict(showgrid=True, gridcolor='#eeeeee', tickangle=-45, title="Corte Cronológico"),
+            yaxis=dict(showgrid=True, gridcolor='#eeeeee', tickformat='.1%', title="Ratio de Capital"),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            margin=dict(l=40, r=40, t=80, b=40)
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
+
+        # Análisis adicional de volumen
+        st.divider()
+        st.subheader("Volumen de Capital Otorgado")
         df_vol = pd.DataFrame({
             'PR': m_cap_pr if m_cap_pr is not None else 0,
             'SOLIDAR': m_cap_sol if m_cap_sol is not None else 0
         }).fillna(0).reset_index()
         
-        fig_vol = px.bar(df_vol, x='mes_apertura_str', y=['PR', 'SOLIDAR'], 
-                        title="Comparativo de Capital Otorgado", barmode='group')
-        st.plotly_chart(fig_vol, use_container_width=True)
+        fig_bar = px.bar(df_vol, x='mes_apertura_str', y=['PR', 'SOLIDAR'], 
+                        title="Originación por Mes (Comparativo UEN)",
+                        barmode='group',
+                        color_discrete_map={'PR': '#1f77b4', 'SOLIDAR': '#ff7f0e'})
+        fig_bar.update_layout(plot_bgcolor='white', paper_bgcolor='white', font=dict(color='black'))
+        st.plotly_chart(fig_bar, use_container_width=True)
 
     st.caption(f"Referencia: Fecha de corte máxima {fecha_max.strftime('%Y-%m')}.")
 
