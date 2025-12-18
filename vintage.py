@@ -31,8 +31,7 @@ try:
     df = df_raw[df_raw['mes_apertura'] >= fecha_inicio_filas].copy()
     df['mes_apertura_str'] = df['mes_apertura'].dt.strftime('%Y-%m')
 
-    # --- NUEVO: Cálculo de Capital Total por Cosecha ---
-    # Usamos capital_c1 como referencia del monto otorgado inicial
+    # Cálculo de Capital Total por Cosecha
     df_capital_total = df.groupby('mes_apertura_str')['capital_c1'].sum()
     df_capital_total.name = "Capital Total"
 
@@ -57,31 +56,32 @@ try:
         cols_ordenadas = sorted(matriz_ratios.columns, reverse=True)
         matriz_ratios = matriz_ratios.reindex(columns=cols_ordenadas)
 
-        # --- INSERTAR COLUMNA CAPITAL TOTAL ---
-        # Combinamos el Capital Total con la matriz de ratios
+        # Combinamos Capital Total con ratios
         matriz_final = pd.concat([df_capital_total, matriz_ratios], axis=1)
 
-        # --- ESTADÍSTICAS (solo sobre las columnas de fechas/ratios) ---
+        # Estadísticas (solo sobre columnas de ratios)
         stats = pd.DataFrame({
             'Promedio': matriz_ratios.mean(axis=0),
             'Máximo': matriz_ratios.max(axis=0),
             'Mínimo': matriz_ratios.min(axis=0)
         }).T 
         
-        # Unimos todo (la columna Capital Total quedará vacía en las filas de stats)
         matriz_con_stats = pd.concat([matriz_final, stats])
 
-        # --- LIMPIEZA DEFINITIVA CONTRA EL "NONE" ---
+        # Limpieza de nulos
         matriz_con_stats = matriz_con_stats.replace({np.nan: None})
 
         # 3. Aplicar Estilo
         idx = pd.IndexSlice
+        
+        # Definimos los formatos por columna
+        formatos = {col: "{:.2%}" for col in matriz_ratios.columns}
+        formatos["Capital Total"] = "${:,.0f}"
+
         styled_df = (
             matriz_con_stats.style
-            # Formato de moneda para Capital Total y porcentaje para el resto
-            .format({col: "{:.2%}" for col in matriz_ratios.columns}, na_rep="")
-            .format({"Capital Total": "${:,.0f}"}, na_rep="")
-            # Heatmap solo en la zona de ratios (no en Capital Total ni en Stats)
+            .format(formatos, na_rep="") 
+            # Heatmap solo en la zona de ratios (excluyendo Capital Total y Stats)
             .background_gradient(cmap='RdYlGn', axis=None, subset=idx[matriz_ratios.index, matriz_ratios.columns]) 
             .highlight_null(color='white')
             .set_properties(**{
@@ -89,12 +89,12 @@ try:
                 'border': '1px solid #D3D3D3'
             })
             .set_properties(subset=idx[['Promedio', 'Máximo', 'Mínimo'], :], **{'font-weight': 'bold'})
-            # Negrita opcional para la columna de Capital Total para que resalte
-            .set_properties(subset=idx[:, 'Capital Total'], **{'font-weight': 'bold', 'background-color': '#f9f9f9'})
+            # Estilo visual para la columna Capital Total
+            .set_properties(subset=idx[:, 'Capital Total'], **{'font-weight': 'bold', 'background-color': '#f0f2f6'})
         )
 
         st.dataframe(styled_df, use_container_width=True)
-        st.caption(f"Referencia: Fecha de corte máxima {fecha_max.strftime('%Y-%m')}. Capital Total basado en saldo inicial (c1).")
+        st.caption(f"Referencia: Fecha de corte máxima {fecha_max.strftime('%Y-%m')}.")
 
     else:
         st.error("No se encontraron las columnas necesarias.")
