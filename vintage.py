@@ -24,9 +24,7 @@ def load_data():
     return df
 
 def calcular_matriz_datos(df, fecha_max, prefijo_num, prefijo_den):
-    """Función lógica para procesar los datos de las matrices"""
-    if df.empty:
-        return None, None
+    if df.empty: return None, None
     
     df_capital_total = df.groupby('mes_apertura_str')['capital_c1'].sum()
     df_capital_total.name = "Capital Total"
@@ -37,7 +35,6 @@ def calcular_matriz_datos(df, fecha_max, prefijo_num, prefijo_den):
         col_den = f'{prefijo_den}{i+1}'
         fecha_columna = fecha_max - relativedelta(months=i)
         nombre_col_real = fecha_columna.strftime('%Y-%m')
-
         if col_num in df.columns and col_den in df.columns:
             temp = df.groupby('mes_apertura_str').apply(
                 lambda x: x[col_num].sum() / x[col_den].sum() if x[col_den].sum() > 0 else np.nan
@@ -45,29 +42,23 @@ def calcular_matriz_datos(df, fecha_max, prefijo_num, prefijo_den):
             temp.name = nombre_col_real
             results.append(temp)
 
-    if not results:
-        return None, None
-
+    if not results: return None, None
     matriz_ratios = pd.concat(results, axis=1).sort_index(ascending=True)
     cols_ordenadas = sorted(matriz_ratios.columns, reverse=True)
     matriz_ratios = matriz_ratios.reindex(columns=cols_ordenadas)
-    
     return matriz_ratios, df_capital_total
 
 def renderizar_estilo(matriz_ratios, df_capital_total):
-    """Aplica el estilo visual a la matriz"""
     matriz_final = pd.concat([df_capital_total, matriz_ratios], axis=1)
     stats = pd.DataFrame({
         'Promedio': matriz_ratios.mean(axis=0),
         'Máximo': matriz_ratios.max(axis=0),
         'Mínimo': matriz_ratios.min(axis=0)
     }).T 
-    
-    matriz_con_stats = pd.concat([matriz_final, stats]).replace({np.nan: None})
+    matriz_con_stats = pd.concat([matriz_con_stats := matriz_final, stats]).replace({np.nan: None})
     idx = pd.IndexSlice
     formatos = {col: "{:.2%}" for col in matriz_ratios.columns}
     formatos["Capital Total"] = "${:,.0f}"
-
     return (
         matriz_con_stats.style
         .format(formatos, na_rep="") 
@@ -91,7 +82,6 @@ try:
     f_producto = crear_filtro("Producto Agrupado", "producto_agrupado")
     f_origen = crear_filtro("Origen Limpio", "PR_Origen_Limpio")
 
-    # Procesamiento Base
     df_base = df_raw.copy()
     if f_sucursal: df_base = df_base[df_base['nombre_sucursal'].isin(f_sucursal)]
     if f_producto: df_base = df_base[df_base['producto_agrupado'].isin(f_producto)]
@@ -106,9 +96,7 @@ try:
     tab1, tab2 = st.tabs(["📋 Matrices Vintage", "📈 Análisis de Tendencias"])
 
     with tab1:
-        st.title("Reporte de Ratios por Cosecha")
-        
-        # Tabla 1: PR
+        # Lógica de matrices (PR y SOLIDAR)
         df_pr = df_base[df_base['uen'] == 'PR']
         m_ratios_pr, m_cap_pr = calcular_matriz_datos(df_pr, fecha_max, 'saldo_capital_total_c', 'capital_c')
         if m_ratios_pr is not None:
@@ -117,7 +105,6 @@ try:
         
         st.divider()
 
-        # Tabla 2: SOLIDAR
         df_solidar = df_base[df_base['uen'] == 'SOLIDAR']
         m_ratios_sol, m_cap_sol = calcular_matriz_datos(df_solidar, fecha_max, 'saldo_capital_total_890_c', 'capital_c')
         if m_ratios_sol is not None:
@@ -125,39 +112,45 @@ try:
             st.dataframe(renderizar_estilo(m_ratios_sol, m_cap_sol), use_container_width=True)
 
     with tab2:
-        st.title("Análisis de Riesgo Temprano")
-        st.markdown("Comparativa de la evolución del ratio entre las diferentes cosechas.")
+        st.title("Estado Actual de la Cartera")
+        
+        col_a, col_b = st.columns(2)
+        
+        with col_a:
+            if m_ratios_pr is not None:
+                # Tomamos la columna más reciente (el dato de hoy) para cada cosecha
+                ultima_col = m_ratios_pr.columns[0] 
+                df_hoy_pr = m_ratios_pr[ultima_col].reset_index()
+                df_hoy_pr.columns = ['Cosecha', 'Ratio']
+                
+                fig_pr = px.line(df_hoy_pr, x='Cosecha', y='Ratio', 
+                                title=f"Ratio Actual por Cosecha (PR) - Corte {ultima_col}",
+                                markers=True, color_discrete_sequence=['red'])
+                fig_pr.update_layout(yaxis_tickformat='.1%')
+                st.plotly_chart(fig_pr, use_container_width=True)
 
-        if m_ratios_pr is not None:
-            # Preparar datos para gráfico: Evolución de las últimas 6 cosechas
-            df_chart = m_ratios_pr.iloc[-6:].T.reset_index()
-            df_chart.columns = ['Meses de Maduración'] + list(df_chart.columns[1:])
-            df_chart = df_chart.melt(id_vars='Meses de Maduración', var_name='Cosecha', value_name='Ratio')
-            
-            fig = px.line(df_chart.dropna(), 
-                         x='Meses de Maduración', 
-                         y='Ratio', 
-                         color='Cosecha',
-                         title="Curva de Deterioro: Últimas 6 Cosechas (PR)",
-                         markers=True,
-                         labels={'Ratio': 'Ratio de Capital (%)'})
-            fig.update_layout(yaxis_tickformat='.1%')
-            st.plotly_chart(fig, use_container_width=True)
+        with col_b:
+            if m_ratios_sol is not None:
+                ultima_col_sol = m_ratios_sol.columns[0]
+                df_hoy_sol = m_ratios_sol[ultima_col_sol].reset_index()
+                df_hoy_sol.columns = ['Cosecha', 'Ratio']
+                
+                fig_sol = px.line(df_hoy_sol, x='Cosecha', y='Ratio', 
+                                 title=f"Ratio Actual por Cosecha (SOLIDAR) - Corte {ultima_col_sol}",
+                                 markers=True, color_discrete_sequence=['blue'])
+                fig_sol.update_layout(yaxis_tickformat='.1%')
+                st.plotly_chart(fig_sol, use_container_width=True)
 
-            col1, col2 = st.columns(2)
-            with col1:
-                # Top Cosechas más riesgosas (mes 1)
-                st.subheader("Cosechas con mayor ratio inicial")
-                primer_mes = m_ratios_pr.columns[-1] # El mes más reciente de maduración
-                top_riesgo = m_ratios_pr[primer_mes].sort_values(ascending=False).head(5)
-                st.table(top_riesgo.map(lambda x: f"{x:.2%}"))
-
-            with col2:
-                # Volumen de originación
-                st.subheader("Volumen de Capital por Cosecha")
-                fig_bar = px.bar(m_cap_pr.reset_index(), x='mes_apertura_str', y='Capital Total', 
-                                title="Capital Otorgado por Mes", color_discrete_sequence=['#2C3E50'])
-                st.plotly_chart(fig_bar, use_container_width=True)
+        # Gráfico de barras de Capital Total combinado
+        st.subheader("Originación de Capital por UEN")
+        df_vol = pd.DataFrame({
+            'PR': m_cap_pr if m_cap_pr is not None else 0,
+            'SOLIDAR': m_cap_sol if m_cap_sol is not None else 0
+        }).fillna(0).reset_index()
+        
+        fig_vol = px.bar(df_vol, x='mes_apertura_str', y=['PR', 'SOLIDAR'], 
+                        title="Comparativo de Capital Otorgado", barmode='group')
+        st.plotly_chart(fig_vol, use_container_width=True)
 
     st.caption(f"Referencia: Fecha de corte máxima {fecha_max.strftime('%Y-%m')}.")
 
