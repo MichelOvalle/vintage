@@ -6,16 +6,6 @@ import numpy as np
 # 1. Configuración de la página
 st.set_page_config(page_title="Matriz Vintage Pro", layout="wide")
 
-# CSS AGRESIVO: Forzamos el fondo blanco en cada rincón posible del componente
-st.markdown("""
-    <style>
-    .stApp { background-color: white; }
-    [data-testid="stDataFrame"] { background-color: white !important; }
-    /* Esto elimina cualquier rastro de fondo oscuro en las celdas */
-    div[data-testid="stTable"] td { background-color: white !important; }
-    </style>
-    """, unsafe_allow_html=True)
-
 @st.cache_data
 def load_data():
     df = pd.read_parquet("vintage_acum.parquet")
@@ -27,6 +17,7 @@ try:
     df_raw = load_data()
     st.title("📊 Matriz de Capital: Vista Final Limpia")
 
+    # Parámetros de fechas
     fecha_max = df_raw['mes_apertura'].max()
     fecha_inicio_filas = fecha_max - pd.DateOffset(months=24)
     df = df_raw[df_raw['mes_apertura'] >= fecha_inicio_filas].copy()
@@ -62,38 +53,30 @@ try:
         
         matriz_con_stats = pd.concat([matriz_final, stats])
 
-        # --- EL TRUCO FINAL: REEMPLAZO DE NULOS POR ESPACIOS ---
-        matriz_numerica = matriz_con_stats.copy()
-        
-        # Convertimos a string y cambiamos el "NaN" por un espacio real " "
-        def final_clean(val):
-            if pd.isna(val):
-                return " " # Un espacio vacío para engañar al renderizado
-            return f"{val:.2%}"
-        
-        matriz_display = matriz_con_stats.applymap(final_clean)
-
-        # 3. Aplicar Estilo
+        # --- ESTILO FINAL (HTML PURO PARA CONTROL TOTAL) ---
         idx = pd.IndexSlice
+        
+        # Aplicamos el estilo
         styled_df = (
-            matriz_display.style
+            matriz_con_stats.style
+            .format("{:.2%}", na_rep="")  # Quita los "None"
             .set_properties(**{
-                'color': 'black',
-                'background-color': 'white',
-                'border': '1px solid #eeeeee'
+                'background-color': 'white', # Fondo blanco base
+                'color': 'black',             # Texto negro
+                'border': '1px solid #dee2e6',
+                'text-align': 'center',
+                'padding': '8px'
             })
-            # El heatmap solo se aplica donde había números originalmente
-            .background_gradient(
-                cmap='RdYlGn', 
-                axis=None, 
-                subset=idx[matriz_final.index, :],
-                gmap=matriz_numerica.loc[matriz_final.index, :]
-            )
+            # Mapa de calor solo en las celdas de datos
+            .background_gradient(cmap='RdYlGn', axis=None, subset=idx[matriz_final.index, :])
+            # Negritas para los encabezados y estadísticas
             .set_properties(subset=idx[['Promedio', 'Máximo', 'Mínimo'], :], **{'font-weight': 'bold'})
         )
 
-        st.dataframe(styled_df, use_container_width=True)
-        st.caption(f"Referencia: Fecha de corte máxima {fecha_max.strftime('%Y-%m')}.")
+        # RENDERIZADO COMO HTML (Esto mata el fondo negro de Streamlit)
+        st.write(styled_df.to_html(), unsafe_allow_html=True)
+        
+        st.markdown(f"<br><p style='color: grey;'>Referencia: Fecha de corte máxima {fecha_max.strftime('%Y-%m')}.</p>", unsafe_allow_html=True)
 
     else:
         st.error("No se encontraron las columnas necesarias.")
