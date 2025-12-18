@@ -24,7 +24,8 @@ def load_data():
 
 try:
     df_raw = load_data()
-    st.title("📊 Matriz de Capital: Vista Final Limpia")
+    # Título actualizado según tu solicitud
+    st.title("📊 Vintage 30 - 150")
 
     fecha_max = df_raw['mes_apertura'].max()
     fecha_inicio_filas = fecha_max - pd.DateOffset(months=24)
