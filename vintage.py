@@ -9,29 +9,17 @@ from statsmodels.tsa.holtwinters import SimpleExpSmoothing
 # 1. Configuración de la página
 st.set_page_config(page_title="Reporte Vintage Pro", layout="wide")
 
-# CSS AGRESIVO para forzar texto negro y fondo blanco
+# CSS Ajustado: Quitamos la agresividad que ocultaba los números y mantenemos fondo blanco
 st.markdown("""
     <style>
     .main { background-color: #FFFFFF; }
     
-    /* Forzar texto negro en TODAS las celdas y cabeceras de tablas */
-    [data-testid="stDataFrame"] td, 
-    [data-testid="stDataFrame"] th, 
-    [data-testid="stDataFrame"] [role="gridcell"] {
-        color: #000000 !important;
-        -webkit-text-fill-color: #000000 !important;
-        font-weight: 600 !important;
-    }
-
-    /* Evitar que Streamlit aclare el texto sobre fondos oscuros */
-    div[data-testid="stDataFrame"] div[data-testid="stTable"] {
+    /* Forzar que el contenedor de la tabla sea blanco */
+    div[data-testid="stDataFrame"] {
         background-color: white !important;
     }
     
-    [data-testid="stDataFrame"] td:empty {
-        background-color: white !important;
-    }
-    
+    /* Asegurar que el texto general de la app no interfiera con la tabla */
     header {visibility: hidden;}
     </style>
     """, unsafe_allow_html=True)
@@ -80,32 +68,37 @@ def renderizar_estilo(matriz_ratios, df_capital_total):
     idx = pd.IndexSlice
     cols_ratios = matriz_ratios.columns
     
+    # Creamos el Styler
     styler = matriz_con_stats.style
     
-    # 1. Aplicamos el formato de números al principio
+    # 1. FORMATO DE NÚMEROS (Fundamental aplicarlo aquí)
     format_dict = {col: "{:.2%}" for col in cols_ratios}
     format_dict["Capital Total"] = "${:,.0f}"
     styler = styler.format(format_dict, na_rep="")
     
-    # 2. Propiedades base: Forzar texto negro a nivel de Styler también
+    # 2. COLOR DE TEXTO NEGRO Y BORDES (Aplicado a nivel de celda)
     styler = styler.set_properties(**{
-        'background-color': 'white',
-        'color': '#000000',
-        'border': '1px solid #D3D3D3'
+        'color': 'black',
+        'font-weight': '600',
+        'border': '1px solid #D3D3D3',
+        'background-color': 'white'
     })
     
-    # 3. Heatmap
+    # 3. HEATMAP (Sobre los ratios)
     styler = styler.background_gradient(
         cmap='RdYlGn_r', 
         axis=None, 
         subset=idx[matriz_ratios.index, cols_ratios]
     )
     
-    # 4. Forzar blanco en nulos
+    # 4. LIMPIEZA DE NULOS (Fondo blanco para que no se vea negro)
     styler = styler.highlight_null(color='white')
     
-    # 5. Volvemos a aplicar color negro para asegurar que el degradado no lo cambie
-    styler = styler.set_properties(subset=idx[:, :], **{'color': '#000000 !important'})
+    # 5. RE-FORZAR TEXTO NEGRO (Especialmente para el heatmap)
+    styler = styler.set_table_styles([
+        {'selector': 'td', 'props': [('color', 'black'), ('font-weight', '600')]},
+        {'selector': 'th', 'props': [('color', 'black'), ('background-color', '#f0f2f6')]}
+    ])
     
     return styler
 
