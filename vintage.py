@@ -14,6 +14,7 @@ st.markdown("""
     .main { background-color: #FFFFFF; }
     .stDataFrame { background-color: #FFFFFF; }
     [data-testid="stTable"] td, [data-testid="stTable"] th { color: black !important; }
+    header {visibility: hidden;}
     </style>
     """, unsafe_allow_html=True)
 
@@ -26,41 +27,27 @@ def load_data():
 
 def calcular_matriz_datos(df, fecha_max, prefijo_num, prefijo_den):
     if df.empty: return None, None, None
-    
     df_capital_total = df.groupby('mes_apertura_str')['capital_c1'].sum()
     df_capital_total.name = "Capital Total"
 
-    results_graf = []
+    results_graf, results_tabla = [], []
     for i in range(25):
-        col_num = f'{prefijo_num}{i+1}'
-        col_den = f'{prefijo_den}{i+1}'
+        col_num, col_den = f'{prefijo_num}{i+1}', f'{prefijo_den}{i+1}'
         nombre_col = f"Mes {i+1}"
-        if col_num in df.columns and col_den in df.columns:
-            temp = df.groupby('mes_apertura_str').apply(
-                lambda x: x[col_num].sum() / x[col_den].sum() if x[col_den].sum() > 0 else np.nan
-            )
-            temp.name = nombre_col
-            results_graf.append(temp)
-
-    results_tabla = []
-    for i in range(25):
-        col_num = f'{prefijo_num}{i+1}'
-        col_den = f'{prefijo_den}{i+1}'
         fecha_columna = fecha_max - relativedelta(months=i)
         nombre_col_real = fecha_columna.strftime('%Y-%m')
         if col_num in df.columns and col_den in df.columns:
             temp = df.groupby('mes_apertura_str').apply(
                 lambda x: x[col_num].sum() / x[col_den].sum() if x[col_den].sum() > 0 else np.nan
             )
-            temp.name = nombre_col_real
-            results_tabla.append(temp)
+            t_graf = temp.copy(); t_graf.name = nombre_col; results_graf.append(t_graf)
+            t_tab = temp.copy(); t_tab.name = nombre_col_real; results_tabla.append(t_tab)
 
     if not results_graf: return None, None, None
-    matriz_ratios_grafico = pd.concat(results_graf, axis=1).sort_index(ascending=True)
-    matriz_ratios_tabla = pd.concat(results_tabla, axis=1).sort_index(ascending=True)
-    cols_ordenadas = sorted(matriz_ratios_tabla.columns, reverse=True)
-    matriz_ratios_tabla = matriz_ratios_tabla.reindex(columns=cols_ordenadas)
-    return matriz_ratios_tabla, df_capital_total, matriz_ratios_grafico
+    m_graf = pd.concat(results_graf, axis=1).sort_index(ascending=True)
+    m_tab = pd.concat(results_tabla, axis=1).sort_index(ascending=True)
+    m_tab = m_tab.reindex(columns=sorted(m_tab.columns, reverse=True))
+    return m_tab, df_capital_total, m_graf
 
 def renderizar_estilo(matriz_ratios, df_capital_total):
     matriz_final = pd.concat([df_capital_total, matriz_ratios], axis=1)
@@ -83,34 +70,30 @@ def renderizar_estilo(matriz_ratios, df_capital_total):
         .set_properties(subset=idx[:, 'Capital Total'], **{'font-weight': 'bold', 'background-color': '#f0f2f6'})
     )
 
-def crear_grafico_linea_c2(df, prefijo_num, prefijo_den, titulo, color_linea):
-    if df.empty: return None
-    col_num, col_den = f'{prefijo_num}2', f'{prefijo_den}2'
-    if col_num in df.columns and col_den in df.columns:
-        df_c2 = df.groupby('mes_apertura_str').apply(
-            lambda x: x[col_num].sum() / x[col_den].sum() if x[col_den].sum() > 0 else np.nan
-        ).reset_index()
-        df_c2.columns = ['Cosecha', 'Ratio C2']
-        fig = px.line(df_c2, x='Cosecha', y='Ratio C2', title=titulo, markers=True)
-        fig.update_traces(line_color=color_linea, line_width=3)
-        fig.update_layout(plot_bgcolor='white', yaxis_tickformat='.1%', xaxis={'type': 'category'})
-        fig.update_xaxes(showgrid=True, gridcolor='#f0f0f0', tickangle=-45)
-        fig.update_yaxes(showgrid=True, gridcolor='#f0f0f0')
-        return fig
-    return None
+def crear_gauge(valor, titulo, max_val, umbral_amarillo, umbral_rojo):
+    fig = go.Figure(go.Indicator(
+        mode = "gauge+number",
+        value = valor * 100,
+        domain = {'x': [0, 1], 'y': [0, 1]},
+        title = {'text': titulo, 'font': {'size': 18}},
+        number = {'suffix': "%", 'font': {'size': 24}, 'valueformat': ".2f"},
+        gauge = {
+            'axis': {'range': [None, max_val * 100], 'tickwidth': 1},
+            'bar': {'color': "black"},
+            'steps': [
+                {'range': [0, umbral_amarillo * 100], 'color': "#92d050"},
+                {'range': [umbral_amarillo * 100, umbral_rojo * 100], 'color': "#ffff00"},
+                {'range': [umbral_rojo * 100, max_val * 100], 'color': "#ff0000"}],
+        }))
+    fig.update_layout(height=250, margin=dict(l=20, r=20, t=50, b=20))
+    return fig
 
 try:
     df_raw = load_data()
-    
-    # --- SIDEBAR ---
     st.sidebar.header("Filtros Globales")
-    def crear_filtro(label, col_name):
-        options = sorted(df_raw[col_name].dropna().unique())
-        return st.sidebar.multiselect(label, options)
-
-    f_sucursal = crear_filtro("Sucursal", "nombre_sucursal")
-    f_producto = crear_filtro("Producto Agrupado", "producto_agrupado")
-    f_origen = crear_filtro("Origen Limpio", "PR_Origen_Limpio")
+    f_sucursal = st.sidebar.multiselect("Sucursal", sorted(df_raw['nombre_sucursal'].dropna().unique()))
+    f_producto = st.sidebar.multiselect("Producto Agrupado", sorted(df_raw['producto_agrupado'].dropna().unique()))
+    f_origen = st.sidebar.multiselect("Origen Limpio", sorted(df_raw['PR_Origen_Limpio'].dropna().unique()))
 
     df_base = df_raw.copy()
     if f_sucursal: df_base = df_base[df_base['nombre_sucursal'].isin(f_sucursal)]
@@ -118,104 +101,85 @@ try:
     if f_origen: df_base = df_base[df_base['PR_Origen_Limpio'].isin(f_origen)]
 
     fecha_max = df_raw['mes_apertura'].max()
-    fecha_inicio_24 = fecha_max - pd.DateOffset(months=24)
-    df_24 = df_base[df_base['mes_apertura'] >= fecha_inicio_24].copy()
+    df_24 = df_base[df_base['mes_apertura'] >= (fecha_max - pd.DateOffset(months=24))].copy()
     df_24['mes_apertura_str'] = df_24['mes_apertura'].dt.strftime('%Y-%m')
 
-    # --- TABS ---
-    tab1, tab2, tab3 = st.tabs(["📋 Matrices Vintage", "📈 Curvas, C2 y Saldo", "📍 Detalle por Sucursal"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📋 Matrices", "📈 Comportamiento", "📍 Sucursales", "🚀 Resumen Ejecutivo"])
 
     df_pr = df_24[df_24['uen'] == 'PR']
-    df_solidar = df_24[df_24['uen'] == 'SOLIDAR']
+    df_sol = df_24[df_24['uen'] == 'SOLIDAR']
 
     with tab1:
-        st.title("Reporte de Ratios por Cosecha (Histórico 24m)")
-        m_tabla_pr, m_cap_pr, m_graf_pr = calcular_matriz_datos(df_pr, fecha_max, 'saldo_capital_total_c', 'capital_c')
-        if m_tabla_pr is not None:
-            st.subheader("📊 Vintage 30 - 150 (UEN: PR)")
-            st.dataframe(renderizar_estilo(m_tabla_pr, m_cap_pr), use_container_width=True)
+        st.title("Matrices Vintage")
+        m_tab_pr, m_cap_pr, m_graf_pr = calcular_matriz_datos(df_pr, fecha_max, 'saldo_capital_total_c', 'capital_c')
+        if m_tab_pr is not None:
+            st.subheader("📊 Vintage PR (C2)"); st.dataframe(renderizar_estilo(m_tab_pr, m_cap_pr), use_container_width=True)
         st.divider()
-        m_tabla_sol, m_cap_sol, m_graf_sol = calcular_matriz_datos(df_solidar, fecha_max, 'saldo_capital_total_890_c', 'capital_c')
-        if m_tabla_sol is not None:
-            st.subheader("📊 Vintage 8 - 90 (UEN: SOLIDAR)")
-            st.dataframe(renderizar_estilo(m_tabla_sol, m_cap_sol), use_container_width=True)
+        m_tab_sol, m_cap_sol, m_graf_sol = calcular_matriz_datos(df_sol, fecha_max, 'saldo_capital_total_890_c', 'capital_c')
+        if m_tab_sol is not None:
+            st.subheader("📊 Vintage SOLIDAR (C1)"); st.dataframe(renderizar_estilo(m_tab_sol, m_cap_sol), use_container_width=True)
 
     with tab2:
-        st.title("Análisis de Maduración y Comportamiento")
-
+        st.title("Tendencias")
         if m_graf_pr is not None:
             matriz_12m = m_graf_pr.tail(12)
             fig_lines = go.Figure()
             for cosecha in matriz_12m.index:
                 fila = matriz_12m.loc[cosecha].dropna()
                 fig_lines.add_trace(go.Scatter(x=fila.index, y=fila.values, mode='lines+markers', name=cosecha))
-            fig_lines.update_layout(title="Curvas de Maduración (Últ. 12m) - PR", xaxis_title="Meses de Maduración", yaxis_tickformat='.1%', plot_bgcolor='white', height=400)
+            fig_lines.update_layout(title="Curvas de Maduración (Últ. 12m) - PR", plot_bgcolor='white', yaxis_tickformat='.1%')
             st.plotly_chart(fig_lines, use_container_width=True)
 
-        st.divider()
+    with tab3:
+        st.title("📍 Detalle Sucursales")
+        c_pr, c_sol = st.columns(2)
+        with c_pr:
+            st.subheader("PR (Ratio C2)")
+            if not df_pr.empty:
+                df_s_p = df_pr.groupby('nombre_sucursal').apply(lambda x: x['saldo_capital_total_c2'].sum() / x['capital_c2'].sum() if x['capital_c2'].sum() > 0 else 0).reset_index()
+                df_s_p.columns = ['Sucursal', 'Ratio C2']; df_s_p = df_s_p.sort_values('Ratio C2', ascending=False)
+                st.dataframe(df_s_p.style.format({'Ratio C2': '{:.2%}'}).background_gradient(cmap='RdYlGn_r'), use_container_width=True)
+        with c_sol:
+            st.subheader("SOLIDAR (Ratio C1)")
+            if not df_sol.empty:
+                df_s_s = df_sol.groupby('nombre_sucursal').apply(lambda x: x['saldo_capital_total_890_c1'].sum() / x['capital_c1'].sum() if x['capital_c1'].sum() > 0 else 0).reset_index()
+                df_s_s.columns = ['Sucursal', 'Ratio C1']; df_s_s = df_s_s.sort_values('Ratio C1', ascending=False)
+                st.dataframe(df_s_s.style.format({'Ratio C1': '{:.2%}'}).background_gradient(cmap='RdYlGn_r'), use_container_width=True)
 
-        st.subheader("Tendencia de Cohorte C2")
+    with tab4:
+        st.title("🚀 Dashboard Ejecutivo")
+        
+        def get_kpi(df, num, den):
+            m = sorted(df['mes_apertura_str'].unique())
+            if len(m) < 2: return 0.0, 0.0
+            act = df[df['mes_apertura_str'] == m[-1]]
+            r_act = act[num].sum() / act[den].sum() if act[den].sum() > 0 else 0
+            ant = df[df['mes_apertura_str'] == m[-2]]
+            r_ant = ant[num].sum() / ant[den].sum() if ant[den].sum() > 0 else 0
+            return r_act, r_act - r_ant
+
+        r_pr, d_pr = get_kpi(df_pr, 'saldo_capital_total_c2', 'capital_c2')
+        r_so, d_so = get_kpi(df_sol, 'saldo_capital_total_890_c1', 'capital_c1')
+
         col1, col2 = st.columns(2)
         with col1:
-            fig_c2_pr = crear_grafico_linea_c2(df_pr, 'saldo_capital_total_c', 'capital_c', "Ratio C2 - UEN: PR", "#1f77b4")
-            if fig_c2_pr: st.plotly_chart(fig_c2_pr, use_container_width=True)
+            st.plotly_chart(crear_gauge(r_pr, "Estado Riesgo PR (C2)", 0.10, 0.03, 0.05), use_container_width=True)
+            st.metric("Ratio Actual PR", f"{r_pr:.2%}", f"{d_pr:+.2%}", delta_color="inverse")
         with col2:
-            fig_c2_sol = crear_grafico_linea_c2(df_solidar, 'saldo_capital_total_890_c', 'capital_c', "Ratio C2 - UEN: SOLIDAR", "#d62728")
-            if fig_c2_sol: st.plotly_chart(fig_c2_sol, use_container_width=True)
-
+            st.plotly_chart(crear_gauge(r_so, "Estado Riesgo SOLIDAR (C1)", 0.15, 0.04, 0.07), use_container_width=True)
+            st.metric("Ratio Actual SOLIDAR", f"{r_so:.2%}", f"{d_so:+.2%}", delta_color="inverse")
+        
         st.divider()
-        
-        st.subheader("Evolución del Saldo Capital Total por Origen (PR)")
-        if not df_pr.empty:
-            df_stack = df_pr.groupby(['mes_apertura_str', 'PR_Origen_Limpio'])['saldo_capital_total'].sum().reset_index()
-            df_stack.columns = ['Cosecha', 'Origen', 'Saldo']
-            df_stack['Saldo'] = pd.to_numeric(df_stack['Saldo'], errors='coerce').fillna(0)
-            fig_stack = px.bar(df_stack, x='Cosecha', y='Saldo', color='Origen', color_discrete_map={'Fisico': '#005b7f', 'Digital': '#f37021'}, text_auto='.2s')
-            fig_stack.update_layout(barmode='stack', plot_bgcolor='white', xaxis={'type': 'category'})
-            fig_stack.update_yaxes(tickprefix="$", tickformat=",.0f", showgrid=True, gridcolor='#eeeeee')
-            st.plotly_chart(fig_stack, use_container_width=True)
+        st.subheader("📍 Alertas Críticas (Top 3 Sucursales)")
+        a, b = st.columns(2)
+        with a:
+            st.write("**Críticas PR**")
+            st.table(df_pr.groupby('nombre_sucursal').apply(lambda x: x['saldo_capital_total_c2'].sum() / x['capital_c2'].sum()).nlargest(3).reset_index(name='Ratio').style.format({'Ratio': '{:.2%}'}))
+        with b:
+            st.write("**Críticas SOLIDAR**")
+            st.table(df_sol.groupby('nombre_sucursal').apply(lambda x: x['saldo_capital_total_890_c1'].sum() / x['capital_c1'].sum()).nlargest(3).reset_index(name='Ratio').style.format({'Ratio': '{:.2%}'}))
 
-    with tab3:
-        st.title("📍 Detalle Numérico por Sucursal")
-        
-        col_pr, col_sol = st.columns(2)
-        
-        with col_pr:
-            st.subheader("UEN: PR (Ratio C2)")
-            if not df_pr.empty:
-                df_suc_pr = df_pr.groupby('nombre_sucursal').apply(
-                    lambda x: x['saldo_capital_total_c2'].sum() / x['capital_c2'].sum() if x['capital_c2'].sum() > 0 else np.nan
-                ).reset_index()
-                df_suc_pr.columns = ['Sucursal', 'Ratio C2']
-                df_suc_pr = df_suc_pr.sort_values(by='Ratio C2', ascending=False).dropna()
-                
-                st.dataframe(
-                    df_suc_pr.style.format({'Ratio C2': '{:.2%}'})
-                    .background_gradient(cmap='RdYlGn_r', subset=['Ratio C2']),
-                    use_container_width=True
-                )
-            else:
-                st.info("Sin datos para PR")
-
-        with col_sol:
-            st.subheader("UEN: SOLIDAR (Ratio C1)")
-            if not df_solidar.empty:
-                # Nota: Para SOLIDAR usamos C1 y el prefijo de saldo 890
-                df_suc_sol = df_solidar.groupby('nombre_sucursal').apply(
-                    lambda x: x['saldo_capital_total_890_c1'].sum() / x['capital_c1'].sum() if x['capital_c1'].sum() > 0 else np.nan
-                ).reset_index()
-                df_suc_sol.columns = ['Sucursal', 'Ratio C1']
-                df_suc_sol = df_suc_sol.sort_values(by='Ratio C1', ascending=False).dropna()
-                
-                st.dataframe(
-                    df_suc_sol.style.format({'Ratio C1': '{:.2%}'})
-                    .background_gradient(cmap='RdYlGn_r', subset=['Ratio C1']),
-                    use_container_width=True
-                )
-            else:
-                st.info("Sin datos para SOLIDAR")
-
-    st.caption(f"Referencia: Datos actualizados hasta {fecha_max.strftime('%Y-%m')}.")
+    st.caption(f"Actualizado: {fecha_max.strftime('%Y-%m')}")
 
 except Exception as e:
-    st.error(f"Error técnico: {e}")
+    st.error(f"Error: {e}")
