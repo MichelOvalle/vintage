@@ -3,6 +3,7 @@ import pandas as pd
 from dateutil.relativedelta import relativedelta
 import numpy as np
 import plotly.graph_objects as go
+import plotly.express as px
 
 # 1. Configuración de la página
 st.set_page_config(page_title="Reporte Vintage Pro", layout="wide")
@@ -26,11 +27,9 @@ def load_data():
 def calcular_matriz_datos(df, fecha_max, prefijo_num, prefijo_den):
     if df.empty: return None, None, None
     
-    # Capital inicial otorgado
     df_capital_total = df.groupby('mes_apertura_str')['capital_c1'].sum()
     df_capital_total.name = "Capital Total"
 
-    # Datos para gráfico (Mes 1, Mes 2...)
     results_graf = []
     for i in range(25):
         col_num = f'{prefijo_num}{i+1}'
@@ -43,7 +42,6 @@ def calcular_matriz_datos(df, fecha_max, prefijo_num, prefijo_den):
             temp.name = nombre_col
             results_graf.append(temp)
 
-    # Datos para tabla (Fechas reales)
     results_tabla = []
     for i in range(25):
         col_num = f'{prefijo_num}{i+1}'
@@ -109,66 +107,76 @@ try:
     df_24['mes_apertura_str'] = df_24['mes_apertura'].dt.strftime('%Y-%m')
 
     # --- TABS ---
-    tab1, tab2 = st.tabs(["📋 Matrices Vintage", "📈 Curvas de Maduración (Últ. 12m)"])
+    tab1, tab2 = st.tabs(["📋 Matrices Vintage", "📈 Curvas y Saldo Capital (PR)"])
 
-    # DataFrames específicos por UEN
     df_pr = df_24[df_24['uen'] == 'PR']
     df_solidar = df_24[df_24['uen'] == 'SOLIDAR']
 
     with tab1:
         st.title("Reporte de Ratios por Cosecha (Histórico 24m)")
-        
         m_tabla_pr, m_cap_pr, m_graf_pr = calcular_matriz_datos(df_pr, fecha_max, 'saldo_capital_total_c', 'capital_c')
         if m_tabla_pr is not None:
             st.subheader("📊 Vintage 30 - 150 (UEN: PR)")
             st.dataframe(renderizar_estilo(m_tabla_pr, m_cap_pr), use_container_width=True)
-        
         st.divider()
-
         m_tabla_sol, m_cap_sol, m_graf_sol = calcular_matriz_datos(df_solidar, fecha_max, 'saldo_capital_total_890_c', 'capital_c')
         if m_tabla_sol is not None:
             st.subheader("📊 Vintage 8 - 90 (UEN: SOLIDAR)")
             st.dataframe(renderizar_estilo(m_tabla_sol, m_cap_sol), use_container_width=True)
 
     with tab2:
-        st.title("Comportamiento Reciente por Maduración")
-        st.markdown("Visualización de las curvas de las **últimas 12 cosechas**.")
-
+        st.title("Análisis de Riesgo y Exposición (PR)")
+        
+        # 1. Gráfico de Curvas de Maduración
         def crear_grafico_vintage_12m(matriz_graf, titulo):
             if matriz_graf is None: return None
             matriz_12m = matriz_graf.tail(12)
             fig = go.Figure()
             for cosecha in matriz_12m.index:
                 fila = matriz_12m.loc[cosecha].dropna()
-                fig.add_trace(go.Scatter(
-                    x=fila.index, 
-                    y=fila.values, 
-                    mode='lines+markers', 
-                    name=cosecha, 
-                    line=dict(width=2.5)
-                ))
-            fig.update_layout(
-                title=titulo, 
-                xaxis_title="Meses de Maduración", 
-                yaxis_title="Ratio de Capital", 
-                yaxis_tickformat='.1%', 
-                hovermode="x unified", 
-                plot_bgcolor='white', 
-                height=500
-            )
-            fig.update_xaxes(showgrid=True, gridcolor='#f0f0f0')
-            fig.update_yaxes(showgrid=True, gridcolor='#f0f0f0')
+                fig.add_trace(go.Scatter(x=fila.index, y=fila.values, mode='lines+markers', name=cosecha, line=dict(width=2.5)))
+            fig.update_layout(title=titulo, xaxis_title="Meses de Maduración", yaxis_title="Ratio", yaxis_tickformat='.1%', hovermode="x unified", plot_bgcolor='white', height=400)
             return fig
 
         if m_graf_pr is not None:
-            st.plotly_chart(crear_grafico_vintage_12m(m_graf_pr, "Curvas de Maduración (Últ. 12 Cosechas) - PR"), use_container_width=True)
+            st.plotly_chart(crear_grafico_vintage_12m(m_graf_pr, "Curvas de Maduración (Últ. 12m) - PR"), use_container_width=True)
 
         st.divider()
+        
+        # 2. Gráfico de Barras Apiladas solicitado: saldo_capital_total
+        st.subheader("Evolución del Saldo Capital Total por Origen (PR)")
+        if not df_pr.empty:
+            # Agrupamos por mes de apertura y origen para sumar el saldo_capital_total
+            df_stack = df_pr.groupby(['mes_apertura_str', 'PR_Origen_Limpio'])['saldo_capital_total_c1'].sum().reset_index()
+            df_stack.columns = ['Mes Apertura', 'Origen', 'Saldo Capital']
 
-        if m_graf_sol is not None:
-            st.plotly_chart(crear_grafico_vintage_12m(m_graf_sol, "Curvas de Maduración (Últ. 12 Cosechas) - SOLIDAR"), use_container_width=True)
+            fig_stack = px.bar(
+                df_stack, 
+                x='Mes Apertura', 
+                y='Saldo Capital', 
+                color='Origen',
+                title="Saldo Capital Total por Canal (PR)",
+                labels={'Saldo Capital': 'Saldo ($)', 'Mes Apertura': 'Cosecha'},
+                color_discrete_map={'Fisico': '#005b7f', 'Digital': '#f37021'}, # Colores similares a tu referencia
+                text_auto=',.0s'
+            )
+            
+            fig_stack.update_layout(
+                barmode='stack', 
+                plot_bgcolor='white', 
+                paper_bgcolor='white',
+                xaxis={'categoryorder':'category ascending'},
+                yaxis_tickprefix="$", 
+                yaxis_tickformat=",.0s"
+            )
+            fig_stack.update_xaxes(showgrid=True, gridcolor='#eeeeee')
+            fig_stack.update_yaxes(showgrid=True, gridcolor='#eeeeee')
+            
+            st.plotly_chart(fig_stack, use_container_width=True)
+        else:
+            st.warning("No hay datos suficientes para la gráfica de saldo.")
 
-    st.caption(f"Referencia: Datos filtrados hasta {fecha_max.strftime('%Y-%m')}.")
+    st.caption(f"Referencia: Datos actualizados hasta {fecha_max.strftime('%Y-%m')}.")
 
 except Exception as e:
     st.error(f"Error técnico: {e}")
