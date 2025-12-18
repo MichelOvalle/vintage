@@ -14,11 +14,6 @@ st.markdown("""
     .main { background-color: #FFFFFF; }
     .stDataFrame { background-color: #FFFFFF; }
     [data-testid="stTable"] td, [data-testid="stTable"] th { color: black !important; }
-    /* Refuerzo para texto negro en tablas de datos */
-    [data-testid="stDataFrame"] td, [data-testid="stDataFrame"] th { 
-        color: black !important; 
-    }
-    header {visibility: hidden;}
     </style>
     """, unsafe_allow_html=True)
 
@@ -88,15 +83,15 @@ def renderizar_estilo(matriz_ratios, df_capital_total):
         .set_properties(subset=idx[:, 'Capital Total'], **{'font-weight': 'bold', 'background-color': '#f0f2f6'})
     )
 
-def crear_grafico_linea_tendencia(df, prefijo_num, prefijo_den, cohorte_n, titulo, color_linea):
+def crear_grafico_linea_c2(df, prefijo_num, prefijo_den, titulo, color_linea):
     if df.empty: return None
-    col_num, col_den = f'{prefijo_num}{cohorte_n}', f'{prefijo_den}{cohorte_n}'
+    col_num, col_den = f'{prefijo_num}2', f'{prefijo_den}2'
     if col_num in df.columns and col_den in df.columns:
-        df_tend = df.groupby('mes_apertura_str').apply(
+        df_c2 = df.groupby('mes_apertura_str').apply(
             lambda x: x[col_num].sum() / x[col_den].sum() if x[col_den].sum() > 0 else np.nan
         ).reset_index()
-        df_tend.columns = ['Cosecha', 'Ratio']
-        fig = px.line(df_tend, x='Cosecha', y='Ratio', title=titulo, markers=True)
+        df_c2.columns = ['Cosecha', 'Ratio C2']
+        fig = px.line(df_c2, x='Cosecha', y='Ratio C2', title=titulo, markers=True)
         fig.update_traces(line_color=color_linea, line_width=3)
         fig.update_layout(plot_bgcolor='white', yaxis_tickformat='.1%', xaxis={'type': 'category'})
         fig.update_xaxes(showgrid=True, gridcolor='#f0f0f0', tickangle=-45)
@@ -109,9 +104,13 @@ try:
     
     # --- SIDEBAR ---
     st.sidebar.header("Filtros Globales")
-    f_sucursal = st.sidebar.multiselect("Sucursal", sorted(df_raw['nombre_sucursal'].dropna().unique()))
-    f_producto = st.sidebar.multiselect("Producto Agrupado", sorted(df_raw['producto_agrupado'].dropna().unique()))
-    f_origen = st.sidebar.multiselect("Origen Limpio", sorted(df_raw['PR_Origen_Limpio'].dropna().unique()))
+    def crear_filtro(label, col_name):
+        options = sorted(df_raw[col_name].dropna().unique())
+        return st.sidebar.multiselect(label, options)
+
+    f_sucursal = crear_filtro("Sucursal", "nombre_sucursal")
+    f_producto = crear_filtro("Producto Agrupado", "producto_agrupado")
+    f_origen = crear_filtro("Origen Limpio", "PR_Origen_Limpio")
 
     df_base = df_raw.copy()
     if f_sucursal: df_base = df_base[df_base['nombre_sucursal'].isin(f_sucursal)]
@@ -124,7 +123,7 @@ try:
     df_24['mes_apertura_str'] = df_24['mes_apertura'].dt.strftime('%Y-%m')
 
     # --- TABS ---
-    tab1, tab2, tab3 = st.tabs(["📋 Matrices Vintage", "📈 Curvas, C2 y Saldo", "📍 Riesgo por Sucursal (PR)"])
+    tab1, tab2 = st.tabs(["📋 Matrices Vintage", "📈 Curvas, C2 y Saldo"])
 
     df_pr = df_24[df_24['uen'] == 'PR']
     df_solidar = df_24[df_24['uen'] == 'SOLIDAR']
@@ -144,7 +143,7 @@ try:
     with tab2:
         st.title("Análisis de Maduración y Comportamiento")
 
-        # --- 1. CURVAS DE MADURACIÓN ---
+        # --- 1. CURVAS DE MADURACIÓN (RESTABLECIDAS) ---
         if m_graf_pr is not None:
             matriz_12m = m_graf_pr.tail(12)
             fig_lines = go.Figure()
@@ -156,15 +155,15 @@ try:
 
         st.divider()
 
-        # --- 2. GRÁFICAS DE TENDENCIA DE COHORTE ---
-        st.subheader("Tendencia de Cosecha (Cohorte)")
+        # --- 2. GRÁFICAS DE LÍNEA C2 ---
+        st.subheader("Tendencia de Cohorte C2")
         col1, col2 = st.columns(2)
         with col1:
-            fig_c2_pr = crear_grafico_linea_tendencia(df_pr, 'saldo_capital_total_c', 'capital_c', 2, "Tendencia C2 - UEN: PR", "#1f77b4")
+            fig_c2_pr = crear_grafico_linea_c2(df_pr, 'saldo_capital_total_c', 'capital_c', "Ratio C2 - UEN: PR", "#1f77b4")
             if fig_c2_pr: st.plotly_chart(fig_c2_pr, use_container_width=True)
         with col2:
-            fig_c1_sol = crear_grafico_linea_tendencia(df_solidar, 'saldo_capital_total_890_c', 'capital_c', 1, "Tendencia C1 - UEN: SOLIDAR", "#d62728")
-            if f_solidar: st.plotly_chart(fig_c1_sol, use_container_width=True)
+            fig_c2_sol = crear_grafico_linea_c2(df_solidar, 'saldo_capital_total_890_c', 'capital_c', "Ratio C2 - UEN: SOLIDAR", "#d62728")
+            if fig_c2_sol: st.plotly_chart(fig_c2_sol, use_container_width=True)
 
         st.divider()
         
@@ -173,57 +172,11 @@ try:
         if not df_pr.empty:
             df_stack = df_pr.groupby(['mes_apertura_str', 'PR_Origen_Limpio'])['saldo_capital_total'].sum().reset_index()
             df_stack.columns = ['Cosecha', 'Origen', 'Saldo']
+            df_stack['Saldo'] = pd.to_numeric(df_stack['Saldo'], errors='coerce').fillna(0)
             fig_stack = px.bar(df_stack, x='Cosecha', y='Saldo', color='Origen', color_discrete_map={'Fisico': '#005b7f', 'Digital': '#f37021'}, text_auto='.2s')
             fig_stack.update_layout(barmode='stack', plot_bgcolor='white', xaxis={'type': 'category'})
             fig_stack.update_yaxes(tickprefix="$", tickformat=",.0f", showgrid=True, gridcolor='#eeeeee')
             st.plotly_chart(fig_stack, use_container_width=True)
-
-    with tab3:
-        st.title("📍 Análisis por Sucursal (UEN: PR)")
-        st.subheader("Ratio Cohorte C2 por Sucursal")
-        
-        if not df_pr.empty:
-            # Agrupamos por sucursal y calculamos el ratio C2
-            # C2 se compone de saldo_capital_total_c2 / capital_c2
-            df_suc = df_pr.groupby('nombre_sucursal').agg({
-                'saldo_capital_total_c2': 'sum',
-                'capital_c2': 'sum'
-            }).reset_index()
-            
-            df_suc['Ratio C2'] = df_suc['saldo_capital_total_c2'] / df_suc['capital_c2']
-            df_suc = df_suc[df_suc['capital_c2'] > 0].sort_values('Ratio C2', ascending=False)
-
-            # Gráfico de Barras
-            fig_suc = px.bar(
-                df_suc, 
-                x='nombre_sucursal', 
-                y='Ratio C2', 
-                title="Ranking de Riesgo C2 por Sucursal",
-                text_auto='.2%',
-                color='Ratio C2',
-                color_continuous_scale='RdYlGn_r'
-            )
-            fig_suc.update_layout(plot_bgcolor='white', yaxis_tickformat='.1%')
-            st.plotly_chart(fig_suc, use_container_width=True)
-
-            # Tabla de detalles
-            st.write("### Detalle Numérico por Sucursal")
-            df_suc_display = df_suc.rename(columns={
-                'nombre_sucursal': 'Sucursal',
-                'saldo_capital_total_c2': 'Capital en Riesgo (C2)',
-                'capital_c2': 'Capital Colocado (C2)'
-            })
-            
-            st.dataframe(
-                df_suc_display.style.format({
-                    'Capital en Riesgo (C2)': '${:,.0f}',
-                    'Capital Colocado (C2)': '${:,.0f}',
-                    'Ratio C2': '{:.2%}'
-                }).background_gradient(cmap='RdYlGn_r', subset=['Ratio C2']),
-                use_container_width=True
-            )
-        else:
-            st.warning("No hay datos disponibles para la UEN PR con los filtros seleccionados.")
 
     st.caption(f"Referencia: Datos actualizados hasta {fecha_max.strftime('%Y-%m')}.")
 
