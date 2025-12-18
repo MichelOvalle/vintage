@@ -123,7 +123,7 @@ try:
     df_24['mes_apertura_str'] = df_24['mes_apertura'].dt.strftime('%Y-%m')
 
     # --- TABS ---
-    tab1, tab2 = st.tabs(["📋 Matrices Vintage", "📈 Curvas, C2 y Saldo"])
+    tab1, tab2, tab3 = st.tabs(["📋 Matrices Vintage", "📈 Curvas, C2 y Saldo", "📍 Sucursales (PR)"])
 
     df_pr = df_24[df_24['uen'] == 'PR']
     df_solidar = df_24[df_24['uen'] == 'SOLIDAR']
@@ -143,7 +143,6 @@ try:
     with tab2:
         st.title("Análisis de Maduración y Comportamiento")
 
-        # --- 1. CURVAS DE MADURACIÓN (RESTABLECIDAS) ---
         if m_graf_pr is not None:
             matriz_12m = m_graf_pr.tail(12)
             fig_lines = go.Figure()
@@ -155,7 +154,6 @@ try:
 
         st.divider()
 
-        # --- 2. GRÁFICAS DE LÍNEA C2 ---
         st.subheader("Tendencia de Cohorte C2")
         col1, col2 = st.columns(2)
         with col1:
@@ -167,7 +165,6 @@ try:
 
         st.divider()
         
-        # --- 3. GRÁFICA DE BARRAS DE SALDO ---
         st.subheader("Evolución del Saldo Capital Total por Origen (PR)")
         if not df_pr.empty:
             df_stack = df_pr.groupby(['mes_apertura_str', 'PR_Origen_Limpio'])['saldo_capital_total'].sum().reset_index()
@@ -177,6 +174,29 @@ try:
             fig_stack.update_layout(barmode='stack', plot_bgcolor='white', xaxis={'type': 'category'})
             fig_stack.update_yaxes(tickprefix="$", tickformat=",.0f", showgrid=True, gridcolor='#eeeeee')
             st.plotly_chart(fig_stack, use_container_width=True)
+
+    with tab3:
+        st.title("📍 Análisis de Riesgo por Sucursal (UEN: PR)")
+        
+        if not df_pr.empty:
+            # Calculamos el Ratio C2 por Sucursal
+            df_suc_c2 = df_pr.groupby('nombre_sucursal').apply(
+                lambda x: x['saldo_capital_total_c2'].sum() / x['capital_c2'].sum() if x['capital_c2'].sum() > 0 else np.nan
+            ).reset_index()
+            df_suc_c2.columns = ['Sucursal', 'Ratio C2']
+            
+            # Ordenamos por riesgo (descendente)
+            df_suc_c2 = df_suc_c2.sort_values(by='Ratio C2', ascending=False).dropna()
+
+            # Detalle Numérico
+            st.subheader("Detalle Numérico")
+            st.dataframe(
+                df_suc_c2.style.format({'Ratio C2': '{:.2%}'})
+                .background_gradient(cmap='RdYlGn_r', subset=['Ratio C2']),
+                use_container_width=True
+            )
+        else:
+            st.warning("No hay datos disponibles para la UEN: PR en el periodo seleccionado.")
 
     st.caption(f"Referencia: Datos actualizados hasta {fecha_max.strftime('%Y-%m')}.")
 
