@@ -6,6 +6,15 @@ import numpy as np
 # 1. Configuración de la página
 st.set_page_config(page_title="Matriz Vintage Pro", layout="wide")
 
+# CSS para forzar fondo blanco y texto negro
+st.markdown("""
+    <style>
+    .main { background-color: #FFFFFF; }
+    .stDataFrame { background-color: #FFFFFF; }
+    [data-testid="stTable"] td, [data-testid="stTable"] th { color: black !important; }
+    </style>
+    """, unsafe_allow_html=True)
+
 @st.cache_data
 def load_data():
     df = pd.read_parquet("vintage_acum.parquet")
@@ -50,33 +59,30 @@ try:
             'Mínimo': matriz_final.min(axis=0)
         }).T 
         
+        # Unimos todo
         matriz_con_stats = pd.concat([matriz_final, stats])
 
-        # --- ESTILO HTML RADICAL ---
-        # Definimos el estilo de la tabla con CSS incrustado
-        table_style = [
-            {'selector': '', 'props': [('background-color', 'white'), ('color', 'black'), ('border-collapse', 'collapse'), ('width', '100%')]},
-            {'selector': 'td, th', 'props': [('border', '1px solid #e0e0e0'), ('padding', '8px'), ('text-align', 'center'), ('font-family', 'sans-serif')]},
-            {'selector': 'th', 'props': [('background-color', '#f8f9fa'), ('font-weight', 'bold')]}
-        ]
+        # --- LIMPIEZA DEFINITIVA CONTRA EL "NONE" ---
+        # Reemplazamos NaN por None y nos aseguramos de que el DataFrame no tenga valores ocultos
+        matriz_con_stats = matriz_con_stats.replace({np.nan: None})
 
+        # 3. Aplicar Estilo
         idx = pd.IndexSlice
-        styled_html = (
+        styled_df = (
             matriz_con_stats.style
-            .format("{:.2%}", na_rep="") # Elimina el texto "None"
-            .set_table_styles(table_style)
-            .set_properties(**{'background-color': 'white', 'color': 'black'}) # Fuerza fondo blanco
-            # Heatmap solo en datos
-            .background_gradient(cmap='RdYlGn', axis=None, subset=idx[matriz_final.index, :])
-            # Negritas en estadísticas
+            # na_rep="" es lo que hace que la celda se vea vacía
+            .format("{:.2%}", na_rep="") 
+            .background_gradient(cmap='RdYlGn', axis=None, subset=idx[matriz_final.index, :]) 
+            .highlight_null(color='white')
+            .set_properties(**{
+                'color': 'black',
+                'border': '1px solid #D3D3D3'
+            })
             .set_properties(subset=idx[['Promedio', 'Máximo', 'Mínimo'], :], **{'font-weight': 'bold'})
-            .to_html()
         )
 
-        # Inyectamos el HTML directamente
-        st.write(styled_html, unsafe_allow_html=True)
-        
-        st.caption(f"<br>Referencia: Fecha de corte máxima {fecha_max.strftime('%Y-%m')}.", unsafe_allow_html=True)
+        st.dataframe(styled_df, use_container_width=True)
+        st.caption(f"Referencia: Fecha de corte máxima {fecha_max.strftime('%Y-%m')}.")
 
     else:
         st.error("No se encontraron las columnas necesarias.")
