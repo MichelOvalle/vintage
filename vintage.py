@@ -3,16 +3,20 @@ import pandas as pd
 from dateutil.relativedelta import relativedelta
 
 # 1. Configuración de la página y forzado de tema claro
-st.set_page_config(page_title="Matriz Vintage - Fondo Blanco", layout="wide")
+st.set_page_config(page_title="Matriz Vintage Pro", layout="wide")
 
-# Estilo CSS para asegurar fondo blanco en la app y texto negro
+# CSS para asegurar que el fondo de la página sea blanco y el texto general negro
 st.markdown("""
     <style>
     .main {
         background-color: #FFFFFF;
     }
-    stDataFrame {
+    .stDataFrame {
         background-color: #FFFFFF;
+    }
+    /* Forzar color de texto negro en celdas y cabeceras */
+    [data-testid="stTable"] td, [data-testid="stTable"] th {
+        color: black !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -27,13 +31,15 @@ def load_data():
 try:
     df_raw = load_data()
 
-    st.title("📊 Matriz de Capital (Fondo Blanco / Texto Negro)")
+    st.title("📊 Matriz de Capital: Heatmap sobre Blanco")
     
+    # Parámetros de fechas
     fecha_max = df_raw['mes_apertura'].max()
     fecha_inicio_filas = fecha_max - pd.DateOffset(months=24)
     df = df_raw[df_raw['mes_apertura'] >= fecha_inicio_filas].copy()
     df['mes_apertura_str'] = df['mes_apertura'].dt.strftime('%Y-%m')
 
+    # Construcción de la Matriz
     results = []
     for i in range(25):
         col_num = f'saldo_capital_total_c{i+1}'
@@ -50,26 +56,29 @@ try:
 
     if results:
         matriz_final = pd.concat(results, axis=1)
+        
+        # Orden: Filas Ascendente (Viejo->Nuevo), Columnas Descendente (Nuevo->Viejo)
         matriz_final = matriz_final.sort_index(ascending=True)
         cols_ordenadas = sorted(matriz_final.columns, reverse=True)
         matriz_final = matriz_final.reindex(columns=cols_ordenadas)
 
-        # 2. Aplicar Estilo: Fondo Blanco, Texto Negro y Heatmap
+        # 2. Aplicar Estilo Correcto
+        # Aplicamos el heatmap y luego nos aseguramos de que los nulos sean blancos
         styled_df = (
             matriz_final.style
             .format("{:.2%}", na_rep="") 
-            .background_gradient(cmap='RdYlGn', axis=None) 
+            .background_gradient(cmap='RdYlGn', axis=None) # Heatmap (ignora nulos por defecto)
+            .highlight_null(color='white')                  # Fuerza blanco en los None
             .set_properties(**{
-                'color': 'black',           # Texto Negro
-                'background-color': 'white', # Fondo Blanco para celdas sin heatmap
-                'border-color': '#D3D3D3'    # Bordes grises claros tipo Excel
+                'color': 'black',                           # Texto siempre negro
+                'border': '1px solid #D3D3D3'               # Bordes definidos
             })
         )
 
         st.dataframe(styled_df, use_container_width=True)
 
     else:
-        st.error("No se encontraron las columnas requeridas.")
+        st.error("Columnas 'c1', 'c2', etc. no encontradas.")
 
 except Exception as e:
     st.error(f"Error: {e}")
