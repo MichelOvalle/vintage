@@ -40,7 +40,6 @@ try:
         nombre_col_real = fecha_columna.strftime('%Y-%m')
 
         if col_num in df.columns and col_den in df.columns:
-            # CAPA 1: Usamos np.nan explícitamente en el cálculo
             temp = df.groupby('mes_apertura_str').apply(
                 lambda x: x[col_num].sum() / x[col_den].sum() if x[col_den].sum() != 0 else np.nan
             )
@@ -62,18 +61,30 @@ try:
         
         matriz_con_stats = pd.concat([matriz_final, stats])
 
-        # CAPA 2: Limpieza de nulos antes del estilo
-        # Esto convierte cualquier variante de nulo en un valor que format() reconozca
-        matriz_con_stats = matriz_con_stats.fillna(np.nan)
+        # --- SOLUCIÓN DEFINITIVA: FORMATEO MANUAL A STRING ---
+        # 1. Guardamos una copia numérica para el Heatmap
+        matriz_numerica = matriz_con_stats.copy()
+        
+        # 2. Convertimos la matriz a texto con formato de porcentaje
+        # Si el valor es NaN, ponemos cadena vacía ""
+        def format_pct(val):
+            if pd.isna(val):
+                return ""
+            return f"{val:.2%}"
 
-        # 3. Aplicar Estilo
+        matriz_display = matriz_con_stats.applymap(format_pct)
+
+        # 3. Aplicar Estilo usando la matriz numérica para los colores
         idx = pd.IndexSlice
         styled_df = (
-            matriz_con_stats.style
-            # CAPA 3: na_rep="" fuerza a que los NaN no muestren texto
-            .format("{:.2%}", na_rep="") 
-            .background_gradient(cmap='RdYlGn', axis=None, subset=idx[matriz_final.index, :]) 
-            .highlight_null(color='white')
+            matriz_display.style
+            # Usamos la matriz numérica original para calcular el mapa de calor
+            .background_gradient(
+                cmap='RdYlGn', 
+                axis=None, 
+                subset=idx[matriz_final.index, :],
+                gmap=matriz_numerica.loc[matriz_final.index, :]
+            )
             .set_properties(**{
                 'color': 'black',
                 'border': '1px solid #D3D3D3'
@@ -81,7 +92,6 @@ try:
             .set_properties(subset=idx[['Promedio', 'Máximo', 'Mínimo'], :], **{'font-weight': 'bold'})
         )
 
-        # Usamos st.table si st.dataframe sigue mostrando "None" (st.table es más estricto con na_rep)
         st.dataframe(styled_df, use_container_width=True)
         st.caption(f"Referencia: Fecha de corte máxima {fecha_max.strftime('%Y-%m')}.")
 
