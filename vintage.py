@@ -11,10 +11,8 @@ st.markdown("""
     <style>
     .main { background-color: #FFFFFF; }
     [data-testid="stDataFrame"] { background-color: #FFFFFF !important; }
-    /* Forzar que el texto sea negro en celdas y cabeceras */
-    div[data-testid="stTable"] td, div[data-testid="stTable"] th { 
-        color: black !important; 
-    }
+    /* Forzar que el texto de las cabeceras sea negro */
+    div[data-testid="stTable"] th { color: black !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -73,18 +71,19 @@ try:
         styled_df = (
             matriz_con_stats.style
             .format("{:.2%}", na_rep="") 
-            # 1. Establecemos fondo blanco base
+            # 1. Fondo blanco base para todas las celdas
             .set_properties(**{
                 'background-color': 'white',
                 'border': '1px solid #D3D3D3'
             })
-            # 2. Aplicamos heatmap (esto suele cambiar el color de font a blanco en celdas oscuras)
+            # 2. Aplicamos heatmap (esto pone algunas letras blancas automáticamente)
             .background_gradient(cmap='RdYlGn', axis=None, subset=idx[matriz_final.index, :]) 
-            # 3. FORZAMOS TEXTO NEGRO en toda la tabla (esto sobreescribe el blanco del heatmap)
+            # 3. SOBRESCRIBIMOS EL COLOR DE LA LETRA A NEGRO (Urgente)
+            # Aplicamos !important para que el heatmap no pueda cambiarlo
             .set_properties(**{'color': 'black !important'})
-            # 4. Reforzamos blanco para nulos
+            # 4. Aseguramos blanco para los nulos
             .highlight_null(color='white')
-            # 5. Negritas en estadísticas (manteniendo el negro)
+            # 5. Negritas en estadísticas (asegurando color negro)
             .set_properties(
                 subset=idx[['Promedio', 'Máximo', 'Mínimo'], :], 
                 **{'font-weight': 'bold', 'color': 'black !important'}
