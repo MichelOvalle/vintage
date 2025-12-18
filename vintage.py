@@ -124,7 +124,7 @@ try:
     df_24['mes_apertura_str'] = df_24['mes_apertura'].dt.strftime('%Y-%m')
 
     # --- TABS ---
-    tab1, tab2 = st.tabs(["📋 Matrices Vintage", "📈 Curvas, C2 y Saldo"])
+    tab1, tab2, tab3 = st.tabs(["📋 Matrices Vintage", "📈 Curvas, C2 y Saldo", "📍 Riesgo por Sucursal (PR)"])
 
     df_pr = df_24[df_24['uen'] == 'PR']
     df_solidar = df_24[df_24['uen'] == 'SOLIDAR']
@@ -160,13 +160,11 @@ try:
         st.subheader("Tendencia de Cosecha (Cohorte)")
         col1, col2 = st.columns(2)
         with col1:
-            # PR utiliza C2
             fig_c2_pr = crear_grafico_linea_tendencia(df_pr, 'saldo_capital_total_c', 'capital_c', 2, "Tendencia C2 - UEN: PR", "#1f77b4")
             if fig_c2_pr: st.plotly_chart(fig_c2_pr, use_container_width=True)
         with col2:
-            # SOLIDAR utiliza C1
             fig_c1_sol = crear_grafico_linea_tendencia(df_solidar, 'saldo_capital_total_890_c', 'capital_c', 1, "Tendencia C1 - UEN: SOLIDAR", "#d62728")
-            if fig_c1_sol: st.plotly_chart(fig_c1_sol, use_container_width=True)
+            if f_solidar: st.plotly_chart(fig_c1_sol, use_container_width=True)
 
         st.divider()
         
@@ -179,6 +177,53 @@ try:
             fig_stack.update_layout(barmode='stack', plot_bgcolor='white', xaxis={'type': 'category'})
             fig_stack.update_yaxes(tickprefix="$", tickformat=",.0f", showgrid=True, gridcolor='#eeeeee')
             st.plotly_chart(fig_stack, use_container_width=True)
+
+    with tab3:
+        st.title("📍 Análisis por Sucursal (UEN: PR)")
+        st.subheader("Ratio Cohorte C2 por Sucursal")
+        
+        if not df_pr.empty:
+            # Agrupamos por sucursal y calculamos el ratio C2
+            # C2 se compone de saldo_capital_total_c2 / capital_c2
+            df_suc = df_pr.groupby('nombre_sucursal').agg({
+                'saldo_capital_total_c2': 'sum',
+                'capital_c2': 'sum'
+            }).reset_index()
+            
+            df_suc['Ratio C2'] = df_suc['saldo_capital_total_c2'] / df_suc['capital_c2']
+            df_suc = df_suc[df_suc['capital_c2'] > 0].sort_values('Ratio C2', ascending=False)
+
+            # Gráfico de Barras
+            fig_suc = px.bar(
+                df_suc, 
+                x='nombre_sucursal', 
+                y='Ratio C2', 
+                title="Ranking de Riesgo C2 por Sucursal",
+                text_auto='.2%',
+                color='Ratio C2',
+                color_continuous_scale='RdYlGn_r'
+            )
+            fig_suc.update_layout(plot_bgcolor='white', yaxis_tickformat='.1%')
+            st.plotly_chart(fig_suc, use_container_width=True)
+
+            # Tabla de detalles
+            st.write("### Detalle Numérico por Sucursal")
+            df_suc_display = df_suc.rename(columns={
+                'nombre_sucursal': 'Sucursal',
+                'saldo_capital_total_c2': 'Capital en Riesgo (C2)',
+                'capital_c2': 'Capital Colocado (C2)'
+            })
+            
+            st.dataframe(
+                df_suc_display.style.format({
+                    'Capital en Riesgo (C2)': '${:,.0f}',
+                    'Capital Colocado (C2)': '${:,.0f}',
+                    'Ratio C2': '{:.2%}'
+                }).background_gradient(cmap='RdYlGn_r', subset=['Ratio C2']),
+                use_container_width=True
+            )
+        else:
+            st.warning("No hay datos disponibles para la UEN PR con los filtros seleccionados.")
 
     st.caption(f"Referencia: Datos actualizados hasta {fecha_max.strftime('%Y-%m')}.")
 
