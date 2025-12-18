@@ -9,13 +9,10 @@ from statsmodels.tsa.holtwinters import SimpleExpSmoothing
 # 1. Configuración de la página
 st.set_page_config(page_title="Reporte Vintage Pro", layout="wide")
 
-# CSS para forzar fondo blanco y eliminar el fondo negro de las tablas
+# CSS para forzar fondo blanco general
 st.markdown("""
     <style>
     .main { background-color: #FFFFFF; }
-    div[data-testid="stDataFrame"] div[data-testid="stTable"] { background-color: white !important; }
-    /* Forzar que las celdas vacías no se vean negras */
-    [data-testid="stDataFrame"] td:empty { background-color: white !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -33,7 +30,7 @@ def calcular_matriz_datos(df, fecha_max, prefijo_num, prefijo_den):
 
     results_graf, results_tabla = [], []
     for i in range(25):
-        col_num, col_den = f'{prefijo_num}{i+1}', f'{prefijo_den}{i+1}'
+        col_num, col_den = f'{prefijo_num}{i+1}' , f'{prefijo_den}{i+1}'
         nombre_col = f"Mes {i+1}"
         fecha_columna = fecha_max - relativedelta(months=i)
         nombre_col_real = fecha_columna.strftime('%Y-%m')
@@ -52,24 +49,28 @@ def calcular_matriz_datos(df, fecha_max, prefijo_num, prefijo_den):
     return m_tab, df_capital_total, m_graf
 
 def renderizar_estilo(matriz_ratios, df_capital_total):
+    # Unimos el capital total con los ratios
     matriz_final = pd.concat([df_capital_total, matriz_ratios], axis=1)
+    
+    # Calculamos estadísticas
     stats = pd.DataFrame({
         'Promedio': matriz_ratios.mean(axis=0), 
         'Máximo': matriz_ratios.max(axis=0), 
         'Mínimo': matriz_ratios.min(axis=0)
     }).T 
+    
     matriz_con_stats = pd.concat([matriz_final, stats])
     
     idx = pd.IndexSlice
-    # Columnas de ratios para el heatmap
     cols_ratios = matriz_ratios.columns
     
+    # Aplicamos el estilo de forma encadenada para evitar que se pierdan formatos
     return (matriz_con_stats.style
-            .format({col: "{:.2%}" for col in cols_ratios}, na_rep="")
-            .format({"Capital Total": "${:,.0f}"}, na_rep="")
-            .background_gradient(cmap='RdYlGn_r', axis=None, subset=idx[matriz_ratios.index, cols_ratios])
-            .set_properties(**{'background-color': 'white', 'color': 'black', 'border': '1px solid #D3D3D3'})
-            .highlight_null(color='white'))
+            .format({col: "{:.2%}" for col in cols_ratios}, na_rep="None") # Porcentajes
+            .format({"Capital Total": "${:,.0f}"}, na_rep="")             # Moneda
+            .background_gradient(cmap='RdYlGn_r', axis=None, subset=idx[matriz_ratios.index, cols_ratios]) # Heatmap
+            .highlight_null(color='white') # Fondo blanco para Nones
+            .set_properties(**{'color': 'black', 'border': '1px solid #D3D3D3'})) # Bordes y texto
 
 def crear_grafico_tendencia_con_pronostico(df, prefijo_num, prefijo_den, cohorte_n, titulo, color_linea):
     if df.empty: return None
@@ -135,7 +136,6 @@ try:
     with tab2:
         st.title("Análisis Predictivo y Exposición")
         
-        # 1. Curvas de maduración
         if m_g_pr is not None:
             m_12 = m_g_pr.tail(12)
             fig_m = go.Figure()
@@ -147,7 +147,6 @@ try:
 
         st.divider()
 
-        # 2. Pronósticos
         c1, c2 = st.columns(2)
         with c1:
             f_pr = crear_grafico_tendencia_con_pronostico(df_pr, 'saldo_capital_total_c', 'capital_c', 2, "Tendencia C2 - PR", "#1f77b4")
@@ -158,7 +157,6 @@ try:
 
         st.divider()
 
-        # 3. Barras de Saldo
         if not df_pr.empty:
             df_b = df_pr.groupby(['mes_apertura_str', 'PR_Origen_Limpio'])['saldo_capital_total'].sum().reset_index()
             fig_b = px.bar(df_b, x='mes_apertura_str', y='saldo_capital_total', color='PR_Origen_Limpio', 
