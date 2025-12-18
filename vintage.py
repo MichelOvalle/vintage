@@ -74,7 +74,6 @@ def generar_matriz_vintage(df, fecha_max, prefijo_num, prefijo_den, titulo):
         styled_df = (
             matriz_con_stats.style
             .format(formatos, na_rep="") 
-            # --- CAMBIO AQUÍ: RdYlGn_r para que el menor valor sea VERDE ---
             .background_gradient(cmap='RdYlGn_r', axis=None, subset=idx[matriz_ratios.index, matriz_ratios.columns]) 
             .highlight_null(color='white')
             .set_properties(**{'color': 'black', 'border': '1px solid #D3D3D3'})
@@ -89,35 +88,39 @@ try:
     df_raw = load_data()
     
     st.sidebar.header("Filtros de Segmentación")
+    st.sidebar.info("Nota: Las tablas tienen una UEN fija asignada.")
 
     def crear_filtro(label, col_name):
         options = sorted(df_raw[col_name].dropna().unique())
         return st.sidebar.multiselect(label, options)
 
-    f_uen = crear_filtro("UEN", "uen")
+    # Quitamos UEN de los filtros laterales porque ahora es fija por tabla
     f_sucursal = crear_filtro("Sucursal", "nombre_sucursal")
     f_producto = crear_filtro("Producto Agrupado", "producto_agrupado")
     f_origen = crear_filtro("Origen Limpio", "PR_Origen_Limpio")
 
-    df_filtrado = df_raw.copy()
-    if f_uen: df_filtrado = df_filtrado[df_filtrado['uen'].isin(f_uen)]
-    if f_sucursal: df_filtrado = df_filtrado[df_filtrado['nombre_sucursal'].isin(f_sucursal)]
-    if f_producto: df_filtrado = df_filtrado[df_filtrado['producto_agrupado'].isin(f_producto)]
-    if f_origen: df_filtrado = df_filtrado[df_filtrado['PR_Origen_Limpio'].isin(f_origen)]
+    # Filtro base (común para ambas tablas)
+    df_base = df_raw.copy()
+    if f_sucursal: df_base = df_base[df_base['nombre_sucursal'].isin(f_sucursal)]
+    if f_producto: df_base = df_base[df_base['producto_agrupado'].isin(f_producto)]
+    if f_origen: df_base = df_base[df_base['PR_Origen_Limpio'].isin(f_origen)]
 
     fecha_max = df_raw['mes_apertura'].max()
     fecha_inicio_filas = fecha_max - pd.DateOffset(months=24)
-    df_final = df_filtrado[df_filtrado['mes_apertura'] >= fecha_inicio_filas].copy()
-    df_final['mes_apertura_str'] = df_final['mes_apertura'].dt.strftime('%Y-%m')
+    df_base = df_base[df_base['mes_apertura'] >= fecha_inicio_filas].copy()
+    df_base['mes_apertura_str'] = df_base['mes_apertura'].dt.strftime('%Y-%m')
 
     st.title("📊 Reporte de Ratios Vintage")
-    
-    if f_uen or f_sucursal or f_producto or f_origen:
-        st.info(f"Filtros aplicados. Registros encontrados: {len(df_final)}")
 
-    generar_matriz_vintage(df_final, fecha_max, 'saldo_capital_total_c', 'capital_c', "Vintage 30 - 150")
+    # --- TABLA 1: Vintage 30 - 150 (Filtro UEN = PR) ---
+    df_pr = df_base[df_base['uen'] == 'PR']
+    generar_matriz_vintage(df_pr, fecha_max, 'saldo_capital_total_c', 'capital_c', "Vintage 30 - 150 (UEN: PR)")
+    
     st.write("---") 
-    generar_matriz_vintage(df_final, fecha_max, 'saldo_capital_total_890_c', 'capital_c', "Vintage 8 - 90")
+    
+    # --- TABLA 2: Vintage 8 - 90 (Filtro UEN = SOLIDAR) ---
+    df_solidar = df_base[df_base['uen'] == 'SOLIDAR']
+    generar_matriz_vintage(df_solidar, fecha_max, 'saldo_capital_total_890_c', 'capital_c', "Vintage 8 - 90 (UEN: SOLIDAR)")
 
     st.caption(f"Referencia: Fecha de corte máxima {fecha_max.strftime('%Y-%m')}.")
 
