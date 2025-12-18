@@ -30,6 +30,25 @@ def calcular_matriz_datos(df, fecha_max, prefijo_num, prefijo_den):
     df_capital_total.name = "Capital Total"
 
     results = []
+    # Generamos los meses de maduración (C1 a C25)
+    for i in range(25):
+        col_num = f'{prefijo_num}{i+1}'
+        col_den = f'{prefijo_den}{i+1}'
+        
+        # Nombre de columna como "Mes X" para el eje X del gráfico
+        nombre_col = f"Mes {i+1}"
+
+        if col_num in df.columns and col_den in df.columns:
+            temp = df.groupby('mes_apertura_str').apply(
+                lambda x: x[col_num].sum() / x[col_den].sum() if x[col_den].sum() > 0 else np.nan
+            )
+            temp.name = nombre_col
+            results.append(temp)
+
+    if not results: return None, None
+    
+    # Matriz para la tabla (con fechas reales en columnas)
+    results_tabla = []
     for i in range(25):
         col_num = f'{prefijo_num}{i+1}'
         col_den = f'{prefijo_den}{i+1}'
@@ -40,13 +59,15 @@ def calcular_matriz_datos(df, fecha_max, prefijo_num, prefijo_den):
                 lambda x: x[col_num].sum() / x[col_den].sum() if x[col_den].sum() > 0 else np.nan
             )
             temp.name = nombre_col_real
-            results.append(temp)
+            results_tabla.append(temp)
 
-    if not results: return None, None
-    matriz_ratios = pd.concat(results, axis=1).sort_index(ascending=True)
-    cols_ordenadas = sorted(matriz_ratios.columns, reverse=True)
-    matriz_ratios = matriz_ratios.reindex(columns=cols_ordenadas)
-    return matriz_ratios, df_capital_total
+    matriz_ratios_grafico = pd.concat(results, axis=1).sort_index(ascending=True)
+    matriz_ratios_tabla = pd.concat(results_tabla, axis=1).sort_index(ascending=True)
+    
+    cols_ordenadas = sorted(matriz_ratios_tabla.columns, reverse=True)
+    matriz_ratios_tabla = matriz_ratios_tabla.reindex(columns=cols_ordenadas)
+    
+    return matriz_ratios_tabla, df_capital_total, matriz_ratios_grafico
 
 def renderizar_estilo(matriz_ratios, df_capital_total):
     matriz_final = pd.concat([df_capital_total, matriz_ratios], axis=1)
@@ -93,81 +114,64 @@ try:
     df_base['mes_apertura_str'] = df_base['mes_apertura'].dt.strftime('%Y-%m')
 
     # --- TABS ---
-    tab1, tab2 = st.tabs(["📋 Matrices Vintage", "📈 Tendencia Histórica"])
+    tab1, tab2 = st.tabs(["📋 Matrices Vintage", "📈 Curvas de Maduración"])
 
     with tab1:
+        # Lógica de matrices (PR)
         df_pr = df_base[df_base['uen'] == 'PR']
-        m_ratios_pr, m_cap_pr = calcular_matriz_datos(df_pr, fecha_max, 'saldo_capital_total_c', 'capital_c')
-        if m_ratios_pr is not None:
+        m_tabla_pr, m_cap_pr, m_graf_pr = calcular_matriz_datos(df_pr, fecha_max, 'saldo_capital_total_c', 'capital_c')
+        if m_tabla_pr is not None:
             st.subheader("📊 Vintage 30 - 150 (UEN: PR)")
-            st.dataframe(renderizar_estilo(m_ratios_pr, m_cap_pr), use_container_width=True)
+            st.dataframe(renderizar_estilo(m_tabla_pr, m_cap_pr), use_container_width=True)
         
         st.divider()
 
+        # Lógica de matrices (SOLIDAR)
         df_solidar = df_base[df_base['uen'] == 'SOLIDAR']
-        m_ratios_sol, m_cap_sol = calcular_matriz_datos(df_solidar, fecha_max, 'saldo_capital_total_890_c', 'capital_c')
-        if m_ratios_sol is not None:
+        m_tabla_sol, m_cap_sol, m_graf_sol = calcular_matriz_datos(df_solidar, fecha_max, 'saldo_capital_total_890_c', 'capital_c')
+        if m_tabla_sol is not None:
             st.subheader("📊 Vintage 8 - 90 (UEN: SOLIDAR)")
-            st.dataframe(renderizar_estilo(m_ratios_sol, m_cap_sol), use_container_width=True)
+            st.dataframe(renderizar_estilo(m_tabla_sol, m_cap_sol), use_container_width=True)
 
     with tab2:
-        st.title("Evolución Histórica del Ratio")
-        st.markdown("Esta gráfica muestra el comportamiento del ratio a través del tiempo cronológico.")
+        st.title("Comportamiento por Maduración (Vintage)")
+        st.markdown("Evolución del ratio a medida que las cosechas envejecen (Mes 1 a Mes 24).")
 
-        # Generamos la gráfica de tendencia
-        fig = go.Figure()
+        def crear_grafico_vintage(matriz_graf, titulo):
+            fig = go.Figure()
+            # Graficamos cada cosecha (fila) como una línea
+            for cosecha in matriz_graf.index:
+                fila = matriz_graf.loc[cosecha].dropna()
+                fig.add_trace(go.Scatter(
+                    x=fila.index, 
+                    y=fila.values,
+                    mode='lines',
+                    name=cosecha,
+                    line=dict(width=2),
+                    hovertemplate=f"<b>Cosecha: {cosecha}</b><br>Maduración: %{{x}}<br>Ratio: %{{y:.2%}}<extra></extra>"
+                ))
+            
+            fig.update_layout(
+                title=titulo,
+                xaxis_title="Meses de Maduración",
+                yaxis_title="Ratio de Capital",
+                yaxis_tickformat='.1%',
+                hovermode="closest",
+                plot_bgcolor='white',
+                height=600,
+                legend=dict(title="Cosechas", orientation="v", yanchor="top", y=1, xanchor="left", x=1.02)
+            )
+            fig.update_xaxes(showgrid=True, gridcolor='#f0f0f0')
+            fig.update_yaxes(showgrid=True, gridcolor='#f0f0f0')
+            return fig
 
-        if m_ratios_pr is not None:
-            # Obtenemos la fila de 'Promedio' de la matriz PR
-            promedio_pr = m_ratios_pr.mean(axis=0).sort_index()
-            fig.add_trace(go.Scatter(
-                x=promedio_pr.index, 
-                y=promedio_pr.values,
-                mode='lines+markers',
-                name='Ratio Promedio PR',
-                line=dict(color='#1f77b4', width=3),
-                marker=dict(size=8)
-            ))
+        if m_graf_pr is not None:
+            st.plotly_chart(crear_grafico_vintage(m_graf_pr, "Curvas de Maduración - UEN: PR"), use_container_width=True)
 
-        if m_ratios_sol is not None:
-            # Obtenemos la fila de 'Promedio' de la matriz SOLIDAR
-            promedio_sol = m_ratios_sol.mean(axis=0).sort_index()
-            fig.add_trace(go.Scatter(
-                x=promedio_sol.index, 
-                y=promedio_sol.values,
-                mode='lines+markers',
-                name='Ratio Promedio SOLIDAR',
-                line=dict(color='#ff7f0e', width=3),
-                marker=dict(size=8)
-            ))
-
-        fig.update_layout(
-            hovermode="x unified",
-            plot_bgcolor='white',
-            paper_bgcolor='white',
-            font=dict(color='black'),
-            xaxis=dict(showgrid=True, gridcolor='#eeeeee', tickangle=-45, title="Corte Cronológico"),
-            yaxis=dict(showgrid=True, gridcolor='#eeeeee', tickformat='.1%', title="Ratio de Capital"),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-            margin=dict(l=40, r=40, t=80, b=40)
-        )
-
-        st.plotly_chart(fig, use_container_width=True)
-
-        # Análisis adicional de volumen
         st.divider()
-        st.subheader("Volumen de Capital Otorgado")
-        df_vol = pd.DataFrame({
-            'PR': m_cap_pr if m_cap_pr is not None else 0,
-            'SOLIDAR': m_cap_sol if m_cap_sol is not None else 0
-        }).fillna(0).reset_index()
-        
-        fig_bar = px.bar(df_vol, x='mes_apertura_str', y=['PR', 'SOLIDAR'], 
-                        title="Originación por Mes (Comparativo UEN)",
-                        barmode='group',
-                        color_discrete_map={'PR': '#1f77b4', 'SOLIDAR': '#ff7f0e'})
-        fig_bar.update_layout(plot_bgcolor='white', paper_bgcolor='white', font=dict(color='black'))
-        st.plotly_chart(fig_bar, use_container_width=True)
+
+        if m_graf_sol is not None:
+            st.plotly_chart(crear_grafico_vintage(m_graf_sol, "Curvas de Maduración - UEN: SOLIDAR"), use_container_width=True)
 
     st.caption(f"Referencia: Fecha de corte máxima {fecha_max.strftime('%Y-%m')}.")
 
