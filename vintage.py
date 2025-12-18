@@ -6,21 +6,13 @@ import numpy as np
 # 1. Configuración de la página
 st.set_page_config(page_title="Matriz Vintage Pro", layout="wide")
 
-# CSS para forzar fondo blanco, texto negro y eliminar fondos oscuros en celdas vacías
+# CSS AGRESIVO: Forzamos el fondo blanco en cada rincón posible del componente
 st.markdown("""
     <style>
-    /* Fondo principal */
-    .stApp {
-        background-color: white;
-    }
-    /* Estilo para el contenedor del DataFrame */
-    [data-testid="stDataFrame"] {
-        background-color: white;
-    }
-    /* Forzar que las celdas vacías no hereden fondos negros del tema */
-    div[data-testid="stTable"] {
-        background-color: white;
-    }
+    .stApp { background-color: white; }
+    [data-testid="stDataFrame"] { background-color: white !important; }
+    /* Esto elimina cualquier rastro de fondo oscuro en las celdas */
+    div[data-testid="stTable"] td { background-color: white !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -70,17 +62,16 @@ try:
         
         matriz_con_stats = pd.concat([matriz_final, stats])
 
-        # --- PREPARACIÓN PARA VISUALIZACIÓN ---
-        # Guardamos copia numérica para el heatmap
+        # --- EL TRUCO FINAL: REEMPLAZO DE NULOS POR ESPACIOS ---
         matriz_numerica = matriz_con_stats.copy()
         
-        # Convertimos a string formateado manualmente para evitar "None"
-        def clean_format(val):
+        # Convertimos a string y cambiamos el "NaN" por un espacio real " "
+        def final_clean(val):
             if pd.isna(val):
-                return ""
+                return " " # Un espacio vacío para engañar al renderizado
             return f"{val:.2%}"
         
-        matriz_display = matriz_con_stats.applymap(clean_format)
+        matriz_display = matriz_con_stats.applymap(final_clean)
 
         # 3. Aplicar Estilo
         idx = pd.IndexSlice
@@ -88,17 +79,16 @@ try:
             matriz_display.style
             .set_properties(**{
                 'color': 'black',
-                'background-color': 'white', # Forzamos fondo blanco base en todas las celdas
-                'border': '1px solid #D3D3D3'
+                'background-color': 'white',
+                'border': '1px solid #eeeeee'
             })
-            # Aplicamos el heatmap usando la matriz numérica original
+            # El heatmap solo se aplica donde había números originalmente
             .background_gradient(
                 cmap='RdYlGn', 
                 axis=None, 
                 subset=idx[matriz_final.index, :],
                 gmap=matriz_numerica.loc[matriz_final.index, :]
             )
-            # Resaltar estadísticas en negrita
             .set_properties(subset=idx[['Promedio', 'Máximo', 'Mínimo'], :], **{'font-weight': 'bold'})
         )
 
