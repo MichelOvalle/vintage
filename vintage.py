@@ -9,12 +9,13 @@ from statsmodels.tsa.holtwinters import SimpleExpSmoothing
 # 1. Configuración de la página
 st.set_page_config(page_title="Reporte Vintage Pro", layout="wide")
 
-# CSS para forzar fondo blanco y eliminar el fondo negro de las celdas vacías
+# CSS para forzar fondo blanco y texto negro
 st.markdown("""
     <style>
     .main { background-color: #FFFFFF; }
     div[data-testid="stDataFrame"] div[data-testid="stTable"] { background-color: white !important; }
     [data-testid="stDataFrame"] td:empty { background-color: white !important; }
+    header {visibility: hidden;}
     </style>
     """, unsafe_allow_html=True)
 
@@ -62,20 +63,33 @@ def renderizar_estilo(matriz_ratios, df_capital_total):
     idx = pd.IndexSlice
     cols_ratios = matriz_ratios.columns
     
-    # IMPORTANTE: Aplicamos primero el formato y luego el degradado
-    styled_df = matriz_con_stats.style.format(
-        {col: "{:.2%}" for col in cols_ratios}, na_rep="None"
-    ).format(
-        {"Capital Total": "${:,.0f}"}, na_rep=""
-    ).background_gradient(
-        cmap='RdYlGn_r', axis=None, subset=idx[matriz_ratios.index, cols_ratios]
-    ).highlight_null(
-        color='white'
-    ).set_properties(
-        **{'color': 'black', 'border': '1px solid #D3D3D3'}
+    # Construcción del Styler
+    styler = matriz_con_stats.style
+    
+    # 1. Propiedades de bordes y colores base
+    styler = styler.set_properties(**{
+        'background-color': 'white',
+        'color': 'black',
+        'border': '1px solid #D3D3D3'
+    })
+    
+    # 2. Heatmap invertido (Rojo Malo / Verde Bueno)
+    styler = styler.background_gradient(
+        cmap='RdYlGn_r', 
+        axis=None, 
+        subset=idx[matriz_ratios.index, cols_ratios]
     )
     
-    return styled_df
+    # 3. Forzar blanco en nulos
+    styler = styler.highlight_null(color='white')
+    
+    # 4. APLICAR FORMATO AL FINAL (Para que respete el %)
+    format_dict = {col: "{:.2%}" for col in cols_ratios}
+    format_dict["Capital Total"] = "${:,.0f}"
+    
+    styler = styler.format(format_dict, na_rep="None")
+    
+    return styler
 
 def crear_grafico_tendencia_con_pronostico(df, prefijo_num, prefijo_den, cohorte_n, titulo, color_linea):
     if df.empty: return None
@@ -88,7 +102,6 @@ def crear_grafico_tendencia_con_pronostico(df, prefijo_num, prefijo_den, cohorte
         
         if len(df_tend) < 3: return None
         
-        # Simple Exponential Smoothing para pronóstico
         model = SimpleExpSmoothing(df_tend.values, initialization_method="estimated").fit()
         forecast = model.forecast(1)[0]
         
@@ -99,7 +112,7 @@ def crear_grafico_tendencia_con_pronostico(df, prefijo_num, prefijo_den, cohorte
         fig.add_trace(go.Scatter(x=idx_act, y=df_tend.values, mode='lines+markers', name='Real', line=dict(color=color_linea, width=3)))
         fig.add_trace(go.Scatter(x=[idx_act[-1], sig_mes], y=[df_tend.values[-1], forecast], 
                                  mode='lines+markers', name='Pronóstico', line=dict(color='gray', dash='dash')))
-        fig.update_layout(title=f"{titulo} (Proyección: {forecast:.2%})", plot_bgcolor='white', yaxis_tickformat='.1%')
+        fig.update_layout(title=f"{titulo} (Proyección: {forecast:.2%})", plot_bgcolor='white', yaxis_tickformat='.1%', xaxis={'type': 'category'})
         return fig
     return None
 
@@ -166,7 +179,7 @@ try:
             df_b = df_pr.groupby(['mes_apertura_str', 'PR_Origen_Limpio'])['saldo_capital_total'].sum().reset_index()
             fig_b = px.bar(df_b, x='mes_apertura_str', y='saldo_capital_total', color='PR_Origen_Limpio', 
                            color_discrete_map={'Fisico': '#005b7f', 'Digital': '#f37021'}, text_auto='.2s')
-            fig_b.update_layout(title="Saldo Capital Total por Origen (PR)", barmode='stack', plot_bgcolor='white')
+            fig_b.update_layout(title="Saldo Capital Total por Origen (PR)", barmode='stack', plot_bgcolor='white', xaxis={'type': 'category'})
             st.plotly_chart(fig_b, use_container_width=True)
 
 except Exception as e:
