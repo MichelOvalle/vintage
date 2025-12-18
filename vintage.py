@@ -27,6 +27,7 @@ def load_data():
 def calcular_matriz_datos(df, fecha_max, prefijo_num, prefijo_den):
     if df.empty: return None, None, None
     
+    # Capital inicial otorgado (referencia estática)
     df_capital_total = df.groupby('mes_apertura_str')['capital_c1'].sum()
     df_capital_total.name = "Capital Total"
 
@@ -109,7 +110,6 @@ try:
     # --- TABS ---
     tab1, tab2 = st.tabs(["📋 Matrices Vintage", "📈 Curvas y Originación (PR)"])
 
-    # Pre-cálculo de DataFrames por UEN
     df_pr = df_24[df_24['uen'] == 'PR']
     df_solidar = df_24[df_24['uen'] == 'SOLIDAR']
 
@@ -144,21 +144,22 @@ try:
 
         st.divider()
         
-        # 2. Gráfico de Barras Apiladas por Origen (Evolución Mensual)
-        st.subheader("Evolución de la Originación por Origen Limpio (PR)")
+        # 2. Gráfico de Barras Apiladas por Saldo Capital Total (C1)
+        st.subheader("Exposición Actual por Origen Limpio (Saldo Capital Total - PR)")
         if not df_pr.empty:
-            # Agrupamos por mes y origen para crear la serie de tiempo
-            df_stack = df_pr.groupby(['mes_apertura_str', 'PR_Origen_Limpio'])['capital_c1'].sum().reset_index()
-            df_stack.columns = ['Mes Apertura', 'Origen', 'Capital Otorgado']
+            # CAMBIO CLAVE: Usamos saldo_capital_total_c1 para representar el saldo actual/exposición
+            # Agrupamos por mes y origen
+            df_stack = df_pr.groupby(['mes_apertura_str', 'PR_Origen_Limpio'])['saldo_capital_total_c1'].sum().reset_index()
+            df_stack.columns = ['Mes Apertura', 'Origen', 'Saldo Capital Total']
 
             fig_stack = px.bar(df_stack, 
                                x='Mes Apertura', 
-                               y='Capital Otorgado', 
+                               y='Saldo Capital Total', 
                                color='Origen',
-                               title="Capital Mensual por Canal de Venta",
-                               labels={'Capital Otorgado': 'Capital ($)'},
+                               title="Evolución del Saldo Capital Total por Canal (PR)",
+                               labels={'Saldo Capital Total': 'Saldo ($)'},
                                color_discrete_map={'Fisico': '#1f77b4', 'Digital': '#ff7f0e'},
-                               text_auto=',.0s') # Muestra etiquetas de valor simplificadas
+                               text_auto=',.0s') 
             
             fig_stack.update_layout(
                 barmode='stack', 
@@ -170,7 +171,7 @@ try:
             )
             st.plotly_chart(fig_stack, use_container_width=True)
         else:
-            st.warning("No hay datos suficientes para generar la evolución de origen en UEN PR.")
+            st.warning("No hay datos suficientes para generar la evolución de saldo en UEN PR.")
 
     st.caption(f"Referencia: Datos filtrados hasta {fecha_max.strftime('%Y-%m')}.")
 
