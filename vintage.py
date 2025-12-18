@@ -9,17 +9,29 @@ from statsmodels.tsa.holtwinters import SimpleExpSmoothing
 # 1. Configuración de la página
 st.set_page_config(page_title="Reporte Vintage Pro", layout="wide")
 
-# CSS para forzar fondo blanco, texto negro y corregir visualización de tablas
+# CSS AGRESIVO para forzar texto negro y fondo blanco
 st.markdown("""
     <style>
     .main { background-color: #FFFFFF; }
-    div[data-testid="stDataFrame"] div[data-testid="stTable"] { background-color: white !important; }
-    /* Forzar texto negro en todas las celdas de la tabla */
-    [data-testid="stDataFrame"] td, [data-testid="stDataFrame"] th { 
-        color: black !important; 
-        font-weight: 500;
+    
+    /* Forzar texto negro en TODAS las celdas y cabeceras de tablas */
+    [data-testid="stDataFrame"] td, 
+    [data-testid="stDataFrame"] th, 
+    [data-testid="stDataFrame"] [role="gridcell"] {
+        color: #000000 !important;
+        -webkit-text-fill-color: #000000 !important;
+        font-weight: 600 !important;
     }
-    [data-testid="stDataFrame"] td:empty { background-color: white !important; }
+
+    /* Evitar que Streamlit aclare el texto sobre fondos oscuros */
+    div[data-testid="stDataFrame"] div[data-testid="stTable"] {
+        background-color: white !important;
+    }
+    
+    [data-testid="stDataFrame"] td:empty {
+        background-color: white !important;
+    }
+    
     header {visibility: hidden;}
     </style>
     """, unsafe_allow_html=True)
@@ -68,35 +80,32 @@ def renderizar_estilo(matriz_ratios, df_capital_total):
     idx = pd.IndexSlice
     cols_ratios = matriz_ratios.columns
     
-    # Construcción del Styler con texto negro forzado
     styler = matriz_con_stats.style
     
-    # 1. Propiedades base: Fondo blanco, TEXTO NEGRO y bordes claros
+    # 1. Aplicamos el formato de números al principio
+    format_dict = {col: "{:.2%}" for col in cols_ratios}
+    format_dict["Capital Total"] = "${:,.0f}"
+    styler = styler.format(format_dict, na_rep="")
+    
+    # 2. Propiedades base: Forzar texto negro a nivel de Styler también
     styler = styler.set_properties(**{
         'background-color': 'white',
-        'color': 'black',
-        'border': '1px solid #D3D3D3',
-        'font-family': 'sans-serif'
+        'color': '#000000',
+        'border': '1px solid #D3D3D3'
     })
     
-    # 2. Heatmap (Rojo Riesgo / Verde Salud)
+    # 3. Heatmap
     styler = styler.background_gradient(
         cmap='RdYlGn_r', 
         axis=None, 
         subset=idx[matriz_ratios.index, cols_ratios]
     )
     
-    # 3. Limpieza de celdas nulas (Fondo blanco)
+    # 4. Forzar blanco en nulos
     styler = styler.highlight_null(color='white')
     
-    # 4. Formato Final (Porcentaje y Moneda)
-    format_dict = {col: "{:.2%}" for col in cols_ratios}
-    format_dict["Capital Total"] = "${:,.0f}"
-    
-    styler = styler.format(format_dict, na_rep="")
-    
-    # 5. Estilo para filas de estadísticas (Negrita)
-    styler = styler.set_properties(subset=idx[['Promedio', 'Máximo', 'Mínimo'], :], **{'font-weight': 'bold'})
+    # 5. Volvemos a aplicar color negro para asegurar que el degradado no lo cambie
+    styler = styler.set_properties(subset=idx[:, :], **{'color': '#000000 !important'})
     
     return styler
 
@@ -115,7 +124,7 @@ def crear_grafico_tendencia_con_pronostico(df, prefijo_num, prefijo_den, cohorte
             model = SimpleExpSmoothing(df_tend.values, initialization_method="estimated").fit()
             forecast = model.forecast(1)[0]
         except:
-            forecast = df_tend.tail(3).mean() # Fallback si falla el modelo
+            forecast = df_tend.tail(3).mean()
         
         idx_act = list(df_tend.index)
         sig_mes = (pd.to_datetime(idx_act[-1]) + relativedelta(months=1)).strftime('%Y-%m')
@@ -187,8 +196,7 @@ try:
 
         st.divider()
 
-        if not df_filt.empty:
-            # Gráfica de saldo para UEN PR específicamente
+        if not df_pr.empty:
             df_b = df_pr.groupby(['mes_apertura_str', 'PR_Origen_Limpio'])['saldo_capital_total'].sum().reset_index()
             if not df_b.empty:
                 fig_b = px.bar(df_b, x='mes_apertura_str', y='saldo_capital_total', color='PR_Origen_Limpio', 
