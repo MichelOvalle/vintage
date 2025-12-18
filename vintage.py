@@ -3,9 +3,9 @@ import pandas as pd
 from dateutil.relativedelta import relativedelta
 
 # 1. Configuración de la página y forzado de tema claro
-st.set_page_config(page_title="Matriz Vintage Pro", layout="wide")
+st.set_page_config(page_title="Matriz Vintage con Estadísticas", layout="wide")
 
-# CSS para asegurar que el fondo de la página sea blanco y el texto general negro
+# CSS para asegurar fondo blanco y texto negro
 st.markdown("""
     <style>
     .main {
@@ -14,7 +14,6 @@ st.markdown("""
     .stDataFrame {
         background-color: #FFFFFF;
     }
-    /* Forzar color de texto negro en celdas y cabeceras */
     [data-testid="stTable"] td, [data-testid="stTable"] th {
         color: black !important;
     }
@@ -31,9 +30,8 @@ def load_data():
 try:
     df_raw = load_data()
 
-    st.title("📊 Matriz de Capital: Heatmap sobre Blanco")
+    st.title("📊 Matriz de Capital con Estadísticas")
     
-    # Parámetros de fechas
     fecha_max = df_raw['mes_apertura'].max()
     fecha_inicio_filas = fecha_max - pd.DateOffset(months=24)
     df = df_raw[df_raw['mes_apertura'] >= fecha_inicio_filas].copy()
@@ -62,23 +60,35 @@ try:
         cols_ordenadas = sorted(matriz_final.columns, reverse=True)
         matriz_final = matriz_final.reindex(columns=cols_ordenadas)
 
-        # 2. Aplicar Estilo Correcto
-        # Aplicamos el heatmap y luego nos aseguramos de que los nulos sean blancos
+        # --- CÁLCULO DE ESTADÍSTICAS ---
+        # Calculamos sobre las columnas (axis=0) ignorando automáticamente los None/NaN
+        stats = pd.DataFrame({
+            'Promedio': matriz_final.mean(axis=0),
+            'Máximo': matriz_final.max(axis=0),
+            'Mínimo': matriz_final.min(axis=0)
+        }).T # Transponemos para que queden como filas
+        
+        # Concatenamos las estadísticas al final de la matriz
+        matriz_con_stats = pd.concat([matriz_final, stats])
+
+        # 2. Aplicar Estilo
         styled_df = (
-            matriz_final.style
+            matriz_con_stats.style
             .format("{:.2%}", na_rep="") 
-            .background_gradient(cmap='RdYlGn', axis=None) # Heatmap (ignora nulos por defecto)
-            .highlight_null(color='white')                  # Fuerza blanco en los None
+            .background_gradient(cmap='RdYlGn', axis=None, subset=matriz_final.index) # Heatmap solo en los datos originales
+            .highlight_null(color='white')
             .set_properties(**{
-                'color': 'black',                           # Texto siempre negro
-                'border': '1px solid #D3D3D3'               # Bordes definidos
+                'color': 'black',
+                'border': '1px solid #D3D3D3'
             })
+            # Opcional: poner las filas de estadísticas en negrita
+            .set_properties(subset=['Promedio', 'Máximo', 'Mínimo'], **{'font-weight': 'bold'})
         )
 
         st.dataframe(styled_df, use_container_width=True)
 
     else:
-        st.error("Columnas 'c1', 'c2', etc. no encontradas.")
+        st.error("Columnas requeridas no encontradas.")
 
 except Exception as e:
     st.error(f"Error: {e}")
