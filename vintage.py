@@ -9,10 +9,12 @@ from statsmodels.tsa.holtwinters import SimpleExpSmoothing
 # 1. Configuración de la página
 st.set_page_config(page_title="Reporte Vintage Pro", layout="wide")
 
-# CSS para forzar fondo blanco general
+# CSS para forzar fondo blanco y eliminar el fondo negro de las celdas vacías
 st.markdown("""
     <style>
     .main { background-color: #FFFFFF; }
+    div[data-testid="stDataFrame"] div[data-testid="stTable"] { background-color: white !important; }
+    [data-testid="stDataFrame"] td:empty { background-color: white !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -49,28 +51,31 @@ def calcular_matriz_datos(df, fecha_max, prefijo_num, prefijo_den):
     return m_tab, df_capital_total, m_graf
 
 def renderizar_estilo(matriz_ratios, df_capital_total):
-    # Unimos el capital total con los ratios
     matriz_final = pd.concat([df_capital_total, matriz_ratios], axis=1)
-    
-    # Calculamos estadísticas
     stats = pd.DataFrame({
         'Promedio': matriz_ratios.mean(axis=0), 
         'Máximo': matriz_ratios.max(axis=0), 
         'Mínimo': matriz_ratios.min(axis=0)
     }).T 
-    
     matriz_con_stats = pd.concat([matriz_final, stats])
     
     idx = pd.IndexSlice
     cols_ratios = matriz_ratios.columns
     
-    # Aplicamos el estilo de forma encadenada para evitar que se pierdan formatos
-    return (matriz_con_stats.style
-            .format({col: "{:.2%}" for col in cols_ratios}, na_rep="None") # Porcentajes
-            .format({"Capital Total": "${:,.0f}"}, na_rep="")             # Moneda
-            .background_gradient(cmap='RdYlGn_r', axis=None, subset=idx[matriz_ratios.index, cols_ratios]) # Heatmap
-            .highlight_null(color='white') # Fondo blanco para Nones
-            .set_properties(**{'color': 'black', 'border': '1px solid #D3D3D3'})) # Bordes y texto
+    # IMPORTANTE: Aplicamos primero el formato y luego el degradado
+    styled_df = matriz_con_stats.style.format(
+        {col: "{:.2%}" for col in cols_ratios}, na_rep="None"
+    ).format(
+        {"Capital Total": "${:,.0f}"}, na_rep=""
+    ).background_gradient(
+        cmap='RdYlGn_r', axis=None, subset=idx[matriz_ratios.index, cols_ratios]
+    ).highlight_null(
+        color='white'
+    ).set_properties(
+        **{'color': 'black', 'border': '1px solid #D3D3D3'}
+    )
+    
+    return styled_df
 
 def crear_grafico_tendencia_con_pronostico(df, prefijo_num, prefijo_den, cohorte_n, titulo, color_linea):
     if df.empty: return None
@@ -83,6 +88,7 @@ def crear_grafico_tendencia_con_pronostico(df, prefijo_num, prefijo_den, cohorte
         
         if len(df_tend) < 3: return None
         
+        # Simple Exponential Smoothing para pronóstico
         model = SimpleExpSmoothing(df_tend.values, initialization_method="estimated").fit()
         forecast = model.forecast(1)[0]
         
@@ -115,7 +121,6 @@ try:
 
     tab1, tab2 = st.tabs(["📋 Matrices Vintage", "📈 Análisis de Tendencias"])
 
-    # Cálculos por UEN
     df_pr = df_filt[df_filt['uen'] == 'PR']
     df_sol = df_filt[df_filt['uen'] == 'SOLIDAR']
 
