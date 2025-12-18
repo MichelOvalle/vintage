@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from dateutil.relativedelta import relativedelta
+import numpy as np
 
 # 1. Configuración de la página
 st.set_page_config(page_title="Matriz Vintage Pro", layout="wide")
@@ -23,7 +24,7 @@ def load_data():
 
 try:
     df_raw = load_data()
-    st.title("📊 Matriz de Capital: Vista Limpia")
+    st.title("📊 Matriz de Capital: Vista Final Limpia")
 
     fecha_max = df_raw['mes_apertura'].max()
     fecha_inicio_filas = fecha_max - pd.DateOffset(months=24)
@@ -40,7 +41,7 @@ try:
 
         if col_num in df.columns and col_den in df.columns:
             temp = df.groupby('mes_apertura_str').apply(
-                lambda x: x[col_num].sum() / x[col_den].sum() if x[col_den].sum() != 0 else None
+                lambda x: x[col_num].sum() / x[col_den].sum() if x[col_den].sum() != 0 else np.nan
             )
             temp.name = nombre_col_real
             results.append(temp)
@@ -61,15 +62,15 @@ try:
         # Unimos todo
         matriz_con_stats = pd.concat([matriz_final, stats])
 
-        # --- LIMPIEZA TOTAL DE "NONE" ---
-        # Convertimos explícitamente cualquier tipo de nulo a un valor que el estilizador reconozca
-        matriz_con_stats = matriz_con_stats.astype(object).where(matriz_con_stats.notnull(), None)
+        # --- LIMPIEZA DEFINITIVA CONTRA EL "NONE" ---
+        # Reemplazamos NaN por None y nos aseguramos de que el DataFrame no tenga valores ocultos
+        matriz_con_stats = matriz_con_stats.replace({np.nan: None})
 
         # 3. Aplicar Estilo
         idx = pd.IndexSlice
         styled_df = (
             matriz_con_stats.style
-            # na_rep="" es crucial para que no se vea "None"
+            # na_rep="" es lo que hace que la celda se vea vacía
             .format("{:.2%}", na_rep="") 
             .background_gradient(cmap='RdYlGn', axis=None, subset=idx[matriz_final.index, :]) 
             .highlight_null(color='white')
