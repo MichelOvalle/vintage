@@ -83,6 +83,32 @@ def renderizar_estilo(matriz_ratios, df_capital_total):
         .set_properties(subset=idx[:, 'Capital Total'], **{'font-weight': 'bold', 'background-color': '#f0f2f6'})
     )
 
+def crear_grafico_linea_c2(df, prefijo_num, prefijo_den, titulo, color_linea):
+    if df.empty: return None
+    # Calculamos el ratio para la cohorte 2 (mes 2 de maduración)
+    col_num = f'{prefijo_num}2'
+    col_den = f'{prefijo_den}2'
+    
+    if col_num in df.columns and col_den in df.columns:
+        df_c2 = df.groupby('mes_apertura_str').apply(
+            lambda x: x[col_num].sum() / x[col_den].sum() if x[col_den].sum() > 0 else np.nan
+        ).reset_index()
+        df_c2.columns = ['Cosecha', 'Ratio C2']
+        
+        fig = px.line(df_c2, x='Cosecha', y='Ratio C2', title=titulo, markers=True)
+        fig.update_traces(line_color=color_linea, line_width=3)
+        fig.update_layout(
+            plot_bgcolor='white', 
+            yaxis_tickformat='.1%', 
+            xaxis_title="Mes de Apertura", 
+            yaxis_title="Ratio Mora C2",
+            xaxis={'type': 'category'}
+        )
+        fig.update_xaxes(showgrid=True, gridcolor='#f0f0f0', tickangle=-45)
+        fig.update_yaxes(showgrid=True, gridcolor='#f0f0f0')
+        return fig
+    return None
+
 try:
     df_raw = load_data()
     
@@ -107,7 +133,7 @@ try:
     df_24['mes_apertura_str'] = df_24['mes_apertura'].dt.strftime('%Y-%m')
 
     # --- TABS ---
-    tab1, tab2 = st.tabs(["📋 Matrices Vintage", "📈 Curvas y Saldo Capital (PR)"])
+    tab1, tab2 = st.tabs(["📋 Matrices Vintage", "📈 Análisis Detallado (C2 & Saldo)"])
 
     df_pr = df_24[df_24['uen'] == 'PR']
     df_solidar = df_24[df_24['uen'] == 'SOLIDAR']
@@ -125,52 +151,45 @@ try:
             st.dataframe(renderizar_estilo(m_tabla_sol, m_cap_sol), use_container_width=True)
 
     with tab2:
-        st.title("Análisis de Riesgo y Exposición (PR)")
+        st.title("Comportamiento de Cohorte C2 y Exposición")
         
-        # 1. Gráfico de Curvas de Maduración
-        if m_graf_pr is not None:
-            matriz_12m = m_graf_pr.tail(12)
-            fig_lines = go.Figure()
-            for cosecha in matriz_12m.index:
-                fila = matriz_12m.loc[cosecha].dropna()
-                fig_lines.add_trace(go.Scatter(x=fila.index, y=fila.values, mode='lines+markers', name=cosecha))
-            fig_lines.update_layout(title="Curvas de Maduración (Últ. 12m) - PR", xaxis_title="Maduración", yaxis_tickformat='.1%', plot_bgcolor='white')
-            st.plotly_chart(fig_lines, use_container_width=True)
+        # --- NUEVAS GRÁFICAS DE LÍNEA C2 ---
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            fig_c2_pr = crear_grafico_linea_c2(df_pr, 'saldo_capital_total_c', 'capital_c', "Comportamiento C2 - UEN: PR", "#1f77b4")
+            if fig_c2_pr:
+                st.plotly_chart(fig_c2_pr, use_container_width=True)
+            else:
+                st.info("No hay datos suficientes para C2 PR")
+
+        with col2:
+            fig_c2_sol = crear_grafico_linea_c2(df_solidar, 'saldo_capital_total_890_c', 'capital_c', "Comportamiento C2 - UEN: SOLIDAR", "#d62728")
+            if fig_c2_sol:
+                st.plotly_chart(fig_c2_sol, use_container_width=True)
+            else:
+                st.info("No hay datos suficientes para C2 SOLIDAR")
 
         st.divider()
         
-        # 2. GRÁFICA DE BARRAS AJUSTADA A 'saldo_capital_total'
+        # --- GRÁFICA DE BARRAS DE SALDO (PR) ---
         st.subheader("Evolución del Saldo Capital Total por Origen (PR)")
         if not df_pr.empty:
-            # Agrupación usando 'saldo_capital_total' solicitado
             df_stack = df_pr.groupby(['mes_apertura_str', 'PR_Origen_Limpio'])['saldo_capital_total'].sum().reset_index()
             df_stack.columns = ['Cosecha', 'Origen', 'Saldo']
-            
-            # Asegurar que el saldo sea numérico
             df_stack['Saldo'] = pd.to_numeric(df_stack['Saldo'], errors='coerce').fillna(0)
 
             fig_stack = px.bar(
-                df_stack, 
-                x='Cosecha', 
-                y='Saldo', 
-                color='Origen',
+                df_stack, x='Cosecha', y='Saldo', color='Origen',
                 color_discrete_map={'Fisico': '#005b7f', 'Digital': '#f37021'},
                 text_auto='.2s'
             )
-            
             fig_stack.update_layout(
-                barmode='stack', 
-                plot_bgcolor='white', 
-                paper_bgcolor='white',
-                yaxis_title="Saldo de Capital ($)",
-                xaxis={'type': 'category'}
+                barmode='stack', plot_bgcolor='white', paper_bgcolor='white',
+                yaxis_title="Saldo de Capital ($)", xaxis={'type': 'category'}
             )
-            
             fig_stack.update_yaxes(tickprefix="$", tickformat=",.0f", showgrid=True, gridcolor='#eeeeee')
-            
             st.plotly_chart(fig_stack, use_container_width=True)
-        else:
-            st.warning("No hay datos suficientes para la gráfica de barras.")
 
     st.caption(f"Referencia: Datos actualizados hasta {fecha_max.strftime('%Y-%m')}.")
 
