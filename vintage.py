@@ -107,7 +107,7 @@ try:
     df_24['mes_apertura_str'] = df_24['mes_apertura'].dt.strftime('%Y-%m')
 
     # --- TABS ---
-    tab1, tab2 = st.tabs(["📋 Matrices Vintage", "📈 Curvas de Maduración (Últ. 12m)"])
+    tab1, tab2 = st.tabs(["📋 Matrices Vintage", "📈 Curvas y Originación (PR)"])
 
     # Pre-cálculo de DataFrames por UEN
     df_pr = df_24[df_24['uen'] == 'PR']
@@ -115,23 +115,20 @@ try:
 
     with tab1:
         st.title("Reporte de Ratios por Cosecha (Histórico 24m)")
-        
         m_tabla_pr, m_cap_pr, m_graf_pr = calcular_matriz_datos(df_pr, fecha_max, 'saldo_capital_total_c', 'capital_c')
         if m_tabla_pr is not None:
             st.subheader("📊 Vintage 30 - 150 (UEN: PR)")
             st.dataframe(renderizar_estilo(m_tabla_pr, m_cap_pr), use_container_width=True)
-        
         st.divider()
-
         m_tabla_sol, m_cap_sol, m_graf_sol = calcular_matriz_datos(df_solidar, fecha_max, 'saldo_capital_total_890_c', 'capital_c')
         if m_tabla_sol is not None:
             st.subheader("📊 Vintage 8 - 90 (UEN: SOLIDAR)")
             st.dataframe(renderizar_estilo(m_tabla_sol, m_cap_sol), use_container_width=True)
 
     with tab2:
-        st.title("Comportamiento Reciente por Maduración")
-        st.markdown("Visualización de las curvas de las **últimas 12 cosechas**.")
-
+        st.title("Análisis Detallado UEN PR")
+        
+        # 1. Gráfico de Curvas de Maduración
         def crear_grafico_vintage_12m(matriz_graf, titulo):
             if matriz_graf is None: return None
             matriz_12m = matriz_graf.tail(12)
@@ -139,37 +136,41 @@ try:
             for cosecha in matriz_12m.index:
                 fila = matriz_12m.loc[cosecha].dropna()
                 fig.add_trace(go.Scatter(x=fila.index, y=fila.values, mode='lines+markers', name=cosecha, line=dict(width=2.5)))
-            fig.update_layout(title=titulo, xaxis_title="Meses de Maduración", yaxis_title="Ratio de Capital", yaxis_tickformat='.1%', hovermode="x unified", plot_bgcolor='white', height=500)
+            fig.update_layout(title=titulo, xaxis_title="Meses de Maduración", yaxis_title="Ratio de Capital", yaxis_tickformat='.1%', hovermode="x unified", plot_bgcolor='white', height=450)
             return fig
 
         if m_graf_pr is not None:
-            st.plotly_chart(crear_grafico_vintage_12m(m_graf_pr, "Curvas de Maduración (Últ. 12m) - PR"), use_container_width=True)
-
-        if m_graf_sol is not None:
-            st.plotly_chart(crear_grafico_vintage_12m(m_graf_sol, "Curvas de Maduración (Últ. 12m) - SOLIDAR"), use_container_width=True)
+            st.plotly_chart(crear_grafico_vintage_12m(m_graf_pr, "Curvas de Maduración (Últ. 12 Cosechas) - PR"), use_container_width=True)
 
         st.divider()
-        st.subheader("Segmentación de Capital por Origen (Exclusivo UEN: PR)")
         
-        # --- FILTRO APLICADO AQUÍ: Solo df_pr ---
+        # 2. Gráfico de Barras Apiladas por Origen (Evolución Mensual)
+        st.subheader("Evolución de la Originación por Origen Limpio (PR)")
         if not df_pr.empty:
-            df_origen_capital = df_pr.groupby('PR_Origen_Limpio')['capital_c1'].sum().reset_index()
-            df_origen_capital.columns = ['Origen', 'Capital Total']
+            # Agrupamos por mes y origen para crear la serie de tiempo
+            df_stack = df_pr.groupby(['mes_apertura_str', 'PR_Origen_Limpio'])['capital_c1'].sum().reset_index()
+            df_stack.columns = ['Mes Apertura', 'Origen', 'Capital Otorgado']
 
-            fig_origen = px.bar(df_origen_capital, 
-                                x='Origen', 
-                                y='Capital Total', 
-                                color='Origen',
-                                title="Capital Otorgado por Origen Limpio - UEN PR",
-                                labels={'Capital Total': 'Capital Otorgado ($)'},
-                                color_discrete_map={'Fisico': '#1f77b4', 'Digital': '#ff7f0e'})
+            fig_stack = px.bar(df_stack, 
+                               x='Mes Apertura', 
+                               y='Capital Otorgado', 
+                               color='Origen',
+                               title="Capital Mensual por Canal de Venta",
+                               labels={'Capital Otorgado': 'Capital ($)'},
+                               color_discrete_map={'Fisico': '#1f77b4', 'Digital': '#ff7f0e'},
+                               text_auto=',.0s') # Muestra etiquetas de valor simplificadas
             
-            fig_origen.update_layout(plot_bgcolor='white', paper_bgcolor='white', font=dict(color='black'),
-                                     yaxis_tickprefix="$", yaxis_tickformat=",.0f")
-            
-            st.plotly_chart(fig_origen, use_container_width=True)
+            fig_stack.update_layout(
+                barmode='stack', 
+                plot_bgcolor='white', 
+                paper_bgcolor='white', 
+                xaxis={'categoryorder':'category ascending'},
+                yaxis_tickprefix="$", 
+                yaxis_tickformat=",.0s"
+            )
+            st.plotly_chart(fig_stack, use_container_width=True)
         else:
-            st.warning("No hay datos suficientes para generar la gráfica de origen en UEN PR.")
+            st.warning("No hay datos suficientes para generar la evolución de origen en UEN PR.")
 
     st.caption(f"Referencia: Datos filtrados hasta {fecha_max.strftime('%Y-%m')}.")
 
