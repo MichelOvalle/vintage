@@ -128,53 +128,49 @@ try:
         st.title("Análisis de Riesgo y Exposición (PR)")
         
         # 1. Gráfico de Curvas de Maduración
-        def crear_grafico_vintage_12m(matriz_graf, titulo):
-            if matriz_graf is None: return None
-            matriz_12m = matriz_graf.tail(12)
-            fig = go.Figure()
+        if m_graf_pr is not None:
+            matriz_12m = m_graf_pr.tail(12)
+            fig_lines = go.Figure()
             for cosecha in matriz_12m.index:
                 fila = matriz_12m.loc[cosecha].dropna()
-                fig.add_trace(go.Scatter(x=fila.index, y=fila.values, mode='lines+markers', name=cosecha, line=dict(width=2.5)))
-            fig.update_layout(title=titulo, xaxis_title="Meses de Maduración", yaxis_title="Ratio", yaxis_tickformat='.1%', hovermode="x unified", plot_bgcolor='white', height=400)
-            return fig
-
-        if m_graf_pr is not None:
-            st.plotly_chart(crear_grafico_vintage_12m(m_graf_pr, "Curvas de Maduración (Últ. 12m) - PR"), use_container_width=True)
+                fig_lines.add_trace(go.Scatter(x=fila.index, y=fila.values, mode='lines+markers', name=cosecha))
+            fig_lines.update_layout(title="Curvas de Maduración (Últ. 12m) - PR", xaxis_title="Maduración", yaxis_tickformat='.1%', plot_bgcolor='white')
+            st.plotly_chart(fig_lines, use_container_width=True)
 
         st.divider()
         
-        # 2. Gráfico de Barras Apiladas solicitado: saldo_capital_total
+        # 2. GRÁFICA DE BARRAS AJUSTADA A 'saldo_capital_total'
         st.subheader("Evolución del Saldo Capital Total por Origen (PR)")
         if not df_pr.empty:
-            # Agrupamos por mes de apertura y origen para sumar el saldo_capital_total
-            df_stack = df_pr.groupby(['mes_apertura_str', 'PR_Origen_Limpio'])['saldo_capital_total_c1'].sum().reset_index()
-            df_stack.columns = ['Mes Apertura', 'Origen', 'Saldo Capital']
+            # Agrupación usando 'saldo_capital_total' solicitado
+            df_stack = df_pr.groupby(['mes_apertura_str', 'PR_Origen_Limpio'])['saldo_capital_total'].sum().reset_index()
+            df_stack.columns = ['Cosecha', 'Origen', 'Saldo']
+            
+            # Asegurar que el saldo sea numérico
+            df_stack['Saldo'] = pd.to_numeric(df_stack['Saldo'], errors='coerce').fillna(0)
 
             fig_stack = px.bar(
                 df_stack, 
-                x='Mes Apertura', 
-                y='Saldo Capital', 
+                x='Cosecha', 
+                y='Saldo', 
                 color='Origen',
-                title="Saldo Capital Total por Canal (PR)",
-                labels={'Saldo Capital': 'Saldo ($)', 'Mes Apertura': 'Cosecha'},
-                color_discrete_map={'Fisico': '#005b7f', 'Digital': '#f37021'}, # Colores similares a tu referencia
-                text_auto=',.0s'
+                color_discrete_map={'Fisico': '#005b7f', 'Digital': '#f37021'},
+                text_auto='.2s'
             )
             
             fig_stack.update_layout(
                 barmode='stack', 
                 plot_bgcolor='white', 
                 paper_bgcolor='white',
-                xaxis={'categoryorder':'category ascending'},
-                yaxis_tickprefix="$", 
-                yaxis_tickformat=",.0s"
+                yaxis_title="Saldo de Capital ($)",
+                xaxis={'type': 'category'}
             )
-            fig_stack.update_xaxes(showgrid=True, gridcolor='#eeeeee')
-            fig_stack.update_yaxes(showgrid=True, gridcolor='#eeeeee')
+            
+            fig_stack.update_yaxes(tickprefix="$", tickformat=",.0f", showgrid=True, gridcolor='#eeeeee')
             
             st.plotly_chart(fig_stack, use_container_width=True)
         else:
-            st.warning("No hay datos suficientes para la gráfica de saldo.")
+            st.warning("No hay datos suficientes para la gráfica de barras.")
 
     st.caption(f"Referencia: Datos actualizados hasta {fecha_max.strftime('%Y-%m')}.")
 
