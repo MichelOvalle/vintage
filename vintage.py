@@ -6,12 +6,13 @@ import numpy as np
 # 1. Configuración de la página
 st.set_page_config(page_title="Matriz Vintage Pro", layout="wide")
 
-# CSS para forzar fondo blanco y texto negro
+# CSS para forzar fondo blanco y texto negro en el contenedor de Streamlit
 st.markdown("""
     <style>
     .main { background-color: #FFFFFF; }
-    .stDataFrame { background-color: #FFFFFF; }
-    [data-testid="stTable"] td, [data-testid="stTable"] th { color: black !important; }
+    [data-testid="stDataFrame"] { background-color: #FFFFFF !important; }
+    /* Forzar que el texto sea negro incluso en modo oscuro del sistema */
+    div[data-testid="stTable"] td, div[data-testid="stTable"] th { color: black !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -62,22 +63,27 @@ try:
         # Unimos todo
         matriz_con_stats = pd.concat([matriz_final, stats])
 
-        # --- LIMPIEZA DEFINITIVA CONTRA EL "NONE" ---
-        # Reemplazamos NaN por None y nos aseguramos de que el DataFrame no tenga valores ocultos
-        matriz_con_stats = matriz_con_stats.replace({np.nan: None})
+        # --- LIMPIEZA CONTRA EL "NONE" ---
+        # Aseguramos que todo lo vacío sea NaN de numpy para que .format(na_rep="") lo reconozca
+        matriz_con_stats = matriz_con_stats.fillna(np.nan)
 
         # 3. Aplicar Estilo
         idx = pd.IndexSlice
         styled_df = (
             matriz_con_stats.style
-            # na_rep="" es lo que hace que la celda se vea vacía
+            # na_rep="" hace que la celda se vea vacía (sin "None")
             .format("{:.2%}", na_rep="") 
-            .background_gradient(cmap='RdYlGn', axis=None, subset=idx[matriz_final.index, :]) 
-            .highlight_null(color='white')
+            # Forzamos fondo blanco base ANTES del gradiente
             .set_properties(**{
                 'color': 'black',
+                'background-color': 'white',
                 'border': '1px solid #D3D3D3'
             })
+            # El heatmap se aplica encima del blanco solo en las celdas con datos
+            .background_gradient(cmap='RdYlGn', axis=None, subset=idx[matriz_final.index, :]) 
+            # Reforzamos el blanco para los nulos (por si el gradiente intenta pintarlos)
+            .highlight_null(color='white')
+            # Negritas en estadísticas
             .set_properties(subset=idx[['Promedio', 'Máximo', 'Mínimo'], :], **{'font-weight': 'bold'})
         )
 
