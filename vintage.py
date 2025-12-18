@@ -3,7 +3,6 @@ import pandas as pd
 from dateutil.relativedelta import relativedelta
 import numpy as np
 import plotly.graph_objects as go
-import plotly.express as px
 
 # 1. Configuración de la página
 st.set_page_config(page_title="Reporte Vintage Pro", layout="wide")
@@ -110,7 +109,7 @@ try:
     df_24['mes_apertura_str'] = df_24['mes_apertura'].dt.strftime('%Y-%m')
 
     # --- TABS ---
-    tab1, tab2 = st.tabs(["📋 Matrices Vintage", "📈 Curvas y Originación (PR)"])
+    tab1, tab2 = st.tabs(["📋 Matrices Vintage", "📈 Curvas de Maduración (Últ. 12m)"])
 
     # DataFrames específicos por UEN
     df_pr = df_24[df_24['uen'] == 'PR']
@@ -132,16 +131,31 @@ try:
             st.dataframe(renderizar_estilo(m_tabla_sol, m_cap_sol), use_container_width=True)
 
     with tab2:
-        st.title("Análisis Detallado UEN PR")
-        
+        st.title("Comportamiento Reciente por Maduración")
+        st.markdown("Visualización de las curvas de las **últimas 12 cosechas**.")
+
         def crear_grafico_vintage_12m(matriz_graf, titulo):
             if matriz_graf is None: return None
             matriz_12m = matriz_graf.tail(12)
             fig = go.Figure()
             for cosecha in matriz_12m.index:
                 fila = matriz_12m.loc[cosecha].dropna()
-                fig.add_trace(go.Scatter(x=fila.index, y=fila.values, mode='lines+markers', name=cosecha, line=dict(width=2.5)))
-            fig.update_layout(title=titulo, xaxis_title="Meses de Maduración", yaxis_title="Ratio de Capital", yaxis_tickformat='.1%', hovermode="x unified", plot_bgcolor='white', height=450)
+                fig.add_trace(go.Scatter(
+                    x=fila.index, 
+                    y=fila.values, 
+                    mode='lines+markers', 
+                    name=cosecha, 
+                    line=dict(width=2.5)
+                ))
+            fig.update_layout(
+                title=titulo, 
+                xaxis_title="Meses de Maduración", 
+                yaxis_title="Ratio de Capital", 
+                yaxis_tickformat='.1%', 
+                hovermode="x unified", 
+                plot_bgcolor='white', 
+                height=500
+            )
             fig.update_xaxes(showgrid=True, gridcolor='#f0f0f0')
             fig.update_yaxes(showgrid=True, gridcolor='#f0f0f0')
             return fig
@@ -150,35 +164,9 @@ try:
             st.plotly_chart(crear_grafico_vintage_12m(m_graf_pr, "Curvas de Maduración (Últ. 12 Cosechas) - PR"), use_container_width=True)
 
         st.divider()
-        st.subheader("Exposición por Origen Limpio (PR)")
-        
-        if not df_pr.empty:
-            # Gráfica de barras usando el Saldo Capital Total 30-150 (c1)
-            df_stack = df_pr.groupby(['mes_apertura_str', 'PR_Origen_Limpio'])['saldo_capital_total_c1'].sum().reset_index()
-            df_stack.columns = ['Mes Apertura', 'Origen', 'Saldo Capital']
 
-            fig_stack = px.bar(
-                df_stack, 
-                x='Mes Apertura', 
-                y='Saldo Capital', 
-                color='Origen',
-                title="Evolución del Saldo Capital Total por Canal (PR)",
-                labels={'Saldo Capital': 'Saldo Total ($)'},
-                color_discrete_map={'Fisico': '#1f77b4', 'Digital': '#ff7f0e'},
-                text_auto=',.0s'
-            )
-            
-            fig_stack.update_layout(
-                barmode='stack', 
-                plot_bgcolor='white', 
-                paper_bgcolor='white',
-                xaxis={'categoryorder':'category ascending'},
-                yaxis_tickprefix="$", 
-                yaxis_tickformat=",.0s"
-            )
-            st.plotly_chart(fig_stack, use_container_width=True)
-        else:
-            st.warning("No hay datos suficientes para la gráfica de barras en PR.")
+        if m_graf_sol is not None:
+            st.plotly_chart(crear_grafico_vintage_12m(m_graf_sol, "Curvas de Maduración (Últ. 12 Cosechas) - SOLIDAR"), use_container_width=True)
 
     st.caption(f"Referencia: Datos filtrados hasta {fecha_max.strftime('%Y-%m')}.")
 
