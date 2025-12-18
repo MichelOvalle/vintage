@@ -9,24 +9,29 @@ from statsmodels.tsa.holtwinters import SimpleExpSmoothing
 # 1. Configuración de la página
 st.set_page_config(page_title="Reporte Vintage Pro", layout="wide")
 
-# CSS ULTRA-AGRESIVO para forzar texto negro en todas las condiciones
+# CSS DEFINITIVO Y AGRESIVO
+# Inyectamos el estilo directamente en el cuerpo del documento para forzar el renderizado
 st.markdown("""
     <style>
-    .main { background-color: #FFFFFF; }
+    /* 1. Fondo general blanco */
+    .main { background-color: #FFFFFF !important; }
     
-    /* Selector para forzar color negro en las celdas de datos de Streamlit */
-    [data-testid="stDataFrame"] div[role="gridcell"] > div,
-    [data-testid="stDataFrame"] div[role="columnheader"] > div {
+    /* 2. Forzar texto negro en TODAS las celdas de datos, encabezados y divs internos */
+    [data-testid="stDataFrame"] div[role="gridcell"] *, 
+    [data-testid="stDataFrame"] div[role="columnheader"] *,
+    [data-testid="stDataFrame"] span,
+    [data-testid="stDataFrame"] div {
         color: #000000 !important;
-        font-weight: 700 !important;
         -webkit-text-fill-color: #000000 !important;
+        font-weight: 800 !important;
     }
 
-    /* Asegurar que las celdas vacías no se pinten de negro por error de estilo */
+    /* 3. Asegurar que las celdas vacías sean blancas y no negras */
+    [data-testid="stDataFrame"] div[role="gridcell"]:empty,
     [data-testid="stDataFrame"] td:empty {
         background-color: white !important;
     }
-    
+
     header {visibility: hidden;}
     </style>
     """, unsafe_allow_html=True)
@@ -75,28 +80,28 @@ def renderizar_estilo(matriz_ratios, df_capital_total):
     idx = pd.IndexSlice
     cols_ratios = matriz_ratios.columns
     
-    styler = matriz_con_stats.style
+    # Aplicar formato de números ANTES que cualquier estilo visual
+    styler = matriz_con_stats.style.format(
+        {col: "{:.2%}" for col in cols_ratios}, na_rep=""
+    ).format(
+        {"Capital Total": "${:,.0f}"}, na_rep=""
+    )
     
-    # Aplicar formato de números
-    format_dict = {col: "{:.2%}" for col in cols_ratios}
-    format_dict["Capital Total"] = "${:,.0f}"
-    styler = styler.format(format_dict, na_rep="")
-    
-    # Propiedades base de la tabla
+    # Propiedades base obligatorias
     styler = styler.set_properties(**{
         'color': 'black',
         'font-weight': 'bold',
         'border': '1px solid #D3D3D3'
     })
     
-    # Aplicar Heatmap
+    # Heatmap (Verde para bajo riesgo, Rojo para alto riesgo)
     styler = styler.background_gradient(
         cmap='RdYlGn_r', 
         axis=None, 
         subset=idx[matriz_ratios.index, cols_ratios]
     )
     
-    # Forzar fondo blanco en celdas nulas (donde no hay datos)
+    # Limpiar nulos para evitar el fondo negro
     styler = styler.highlight_null(color='white')
     
     return styler
@@ -155,6 +160,7 @@ try:
         m_t_pr, m_c_pr, m_g_pr = calcular_matriz_datos(df_pr, fecha_max, 'saldo_capital_total_c', 'capital_c')
         if m_t_pr is not None:
             st.subheader("Vintage 30 - 150 (PR)")
+            # Mostramos la tabla
             st.dataframe(renderizar_estilo(m_t_pr, m_c_pr), use_container_width=True)
         
         st.divider()
