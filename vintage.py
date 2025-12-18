@@ -3,6 +3,7 @@ import pandas as pd
 from dateutil.relativedelta import relativedelta
 import numpy as np
 import plotly.graph_objects as go
+import plotly.express as px
 
 # 1. Configuración de la página
 st.set_page_config(page_title="Reporte Vintage Pro", layout="wide")
@@ -30,12 +31,10 @@ def calcular_matriz_datos(df, fecha_max, prefijo_num, prefijo_den):
     df_capital_total.name = "Capital Total"
 
     results_graf = []
-    # Generamos los meses de maduración (C1 a C25)
     for i in range(25):
         col_num = f'{prefijo_num}{i+1}'
         col_den = f'{prefijo_den}{i+1}'
         nombre_col = f"Mes {i+1}"
-
         if col_num in df.columns and col_den in df.columns:
             temp = df.groupby('mes_apertura_str').apply(
                 lambda x: x[col_num].sum() / x[col_den].sum() if x[col_den].sum() > 0 else np.nan
@@ -43,7 +42,6 @@ def calcular_matriz_datos(df, fecha_max, prefijo_num, prefijo_den):
             temp.name = nombre_col
             results_graf.append(temp)
 
-    # Matriz para la tabla (con fechas reales en columnas)
     results_tabla = []
     for i in range(25):
         col_num = f'{prefijo_num}{i+1}'
@@ -58,13 +56,10 @@ def calcular_matriz_datos(df, fecha_max, prefijo_num, prefijo_den):
             results_tabla.append(temp)
 
     if not results_graf: return None, None, None
-
     matriz_ratios_grafico = pd.concat(results_graf, axis=1).sort_index(ascending=True)
     matriz_ratios_tabla = pd.concat(results_tabla, axis=1).sort_index(ascending=True)
-    
     cols_ordenadas = sorted(matriz_ratios_tabla.columns, reverse=True)
     matriz_ratios_tabla = matriz_ratios_tabla.reindex(columns=cols_ordenadas)
-    
     return matriz_ratios_tabla, df_capital_total, matriz_ratios_grafico
 
 def renderizar_estilo(matriz_ratios, df_capital_total):
@@ -107,7 +102,6 @@ try:
     if f_origen: df_base = df_base[df_base['PR_Origen_Limpio'].isin(f_origen)]
 
     fecha_max = df_raw['mes_apertura'].max()
-    # Filtro para la tabla: 24 meses
     fecha_inicio_24 = fecha_max - pd.DateOffset(months=24)
     df_24 = df_base[df_base['mes_apertura'] >= fecha_inicio_24].copy()
     df_24['mes_apertura_str'] = df_24['mes_apertura'].dt.strftime('%Y-%m')
@@ -115,11 +109,13 @@ try:
     # --- TABS ---
     tab1, tab2 = st.tabs(["📋 Matrices Vintage", "📈 Curvas de Maduración (Últ. 12m)"])
 
+    # Pre-cálculo de DataFrames por UEN
+    df_pr = df_24[df_24['uen'] == 'PR']
+    df_solidar = df_24[df_24['uen'] == 'SOLIDAR']
+
     with tab1:
         st.title("Reporte de Ratios por Cosecha (Histórico 24m)")
         
-        # PR
-        df_pr = df_24[df_24['uen'] == 'PR']
         m_tabla_pr, m_cap_pr, m_graf_pr = calcular_matriz_datos(df_pr, fecha_max, 'saldo_capital_total_c', 'capital_c')
         if m_tabla_pr is not None:
             st.subheader("📊 Vintage 30 - 150 (UEN: PR)")
@@ -127,8 +123,6 @@ try:
         
         st.divider()
 
-        # SOLIDAR
-        df_solidar = df_24[df_24['uen'] == 'SOLIDAR']
         m_tabla_sol, m_cap_sol, m_graf_sol = calcular_matriz_datos(df_solidar, fecha_max, 'saldo_capital_total_890_c', 'capital_c')
         if m_tabla_sol is not None:
             st.subheader("📊 Vintage 8 - 90 (UEN: SOLIDAR)")
@@ -140,42 +134,42 @@ try:
 
         def crear_grafico_vintage_12m(matriz_graf, titulo):
             if matriz_graf is None: return None
-            # FILTRO: Tomamos solo las últimas 12 filas (cosechas más recientes)
             matriz_12m = matriz_graf.tail(12)
-            
             fig = go.Figure()
             for cosecha in matriz_12m.index:
                 fila = matriz_12m.loc[cosecha].dropna()
-                fig.add_trace(go.Scatter(
-                    x=fila.index, 
-                    y=fila.values,
-                    mode='lines+markers', # Agregamos puntos para mejor visibilidad
-                    name=cosecha,
-                    line=dict(width=2.5),
-                    hovertemplate=f"<b>Cosecha: {cosecha}</b><br>Maduración: %{{x}}<br>Ratio: %{{y:.2%}}<extra></extra>"
-                ))
-            
-            fig.update_layout(
-                title=titulo,
-                xaxis_title="Meses de Maduración",
-                yaxis_title="Ratio de Capital",
-                yaxis_tickformat='.1%',
-                hovermode="x unified",
-                plot_bgcolor='white',
-                height=600,
-                legend=dict(title="Últimas 12 Cosechas", orientation="v", yanchor="top", y=1, xanchor="left", x=1.02)
-            )
-            fig.update_xaxes(showgrid=True, gridcolor='#f0f0f0')
-            fig.update_yaxes(showgrid=True, gridcolor='#f0f0f0')
+                fig.add_trace(go.Scatter(x=fila.index, y=fila.values, mode='lines+markers', name=cosecha, line=dict(width=2.5)))
+            fig.update_layout(title=titulo, xaxis_title="Meses de Maduración", yaxis_title="Ratio de Capital", yaxis_tickformat='.1%', hovermode="x unified", plot_bgcolor='white', height=500)
             return fig
 
         if m_graf_pr is not None:
             st.plotly_chart(crear_grafico_vintage_12m(m_graf_pr, "Curvas de Maduración (Últ. 12m) - PR"), use_container_width=True)
 
-        st.divider()
-
         if m_graf_sol is not None:
             st.plotly_chart(crear_grafico_vintage_12m(m_graf_sol, "Curvas de Maduración (Últ. 12m) - SOLIDAR"), use_container_width=True)
+
+        st.divider()
+        st.subheader("Segmentación de Capital por Origen (Exclusivo UEN: PR)")
+        
+        # --- FILTRO APLICADO AQUÍ: Solo df_pr ---
+        if not df_pr.empty:
+            df_origen_capital = df_pr.groupby('PR_Origen_Limpio')['capital_c1'].sum().reset_index()
+            df_origen_capital.columns = ['Origen', 'Capital Total']
+
+            fig_origen = px.bar(df_origen_capital, 
+                                x='Origen', 
+                                y='Capital Total', 
+                                color='Origen',
+                                title="Capital Otorgado por Origen Limpio - UEN PR",
+                                labels={'Capital Total': 'Capital Otorgado ($)'},
+                                color_discrete_map={'Fisico': '#1f77b4', 'Digital': '#ff7f0e'})
+            
+            fig_origen.update_layout(plot_bgcolor='white', paper_bgcolor='white', font=dict(color='black'),
+                                     yaxis_tickprefix="$", yaxis_tickformat=",.0f")
+            
+            st.plotly_chart(fig_origen, use_container_width=True)
+        else:
+            st.warning("No hay datos suficientes para generar la gráfica de origen en UEN PR.")
 
     st.caption(f"Referencia: Datos filtrados hasta {fecha_max.strftime('%Y-%m')}.")
 
