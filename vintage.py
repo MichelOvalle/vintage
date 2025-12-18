@@ -17,7 +17,6 @@ try:
     df_raw = load_data()
     st.title("📊 Matriz de Capital: Vista Final Limpia")
 
-    # Parámetros de fechas
     fecha_max = df_raw['mes_apertura'].max()
     fecha_inicio_filas = fecha_max - pd.DateOffset(months=24)
     df = df_raw[df_raw['mes_apertura'] >= fecha_inicio_filas].copy()
@@ -53,30 +52,31 @@ try:
         
         matriz_con_stats = pd.concat([matriz_final, stats])
 
-        # --- ESTILO FINAL (HTML PURO PARA CONTROL TOTAL) ---
+        # --- ESTILO HTML RADICAL ---
+        # Definimos el estilo de la tabla con CSS incrustado
+        table_style = [
+            {'selector': '', 'props': [('background-color', 'white'), ('color', 'black'), ('border-collapse', 'collapse'), ('width', '100%')]},
+            {'selector': 'td, th', 'props': [('border', '1px solid #e0e0e0'), ('padding', '8px'), ('text-align', 'center'), ('font-family', 'sans-serif')]},
+            {'selector': 'th', 'props': [('background-color', '#f8f9fa'), ('font-weight', 'bold')]}
+        ]
+
         idx = pd.IndexSlice
-        
-        # Aplicamos el estilo
-        styled_df = (
+        styled_html = (
             matriz_con_stats.style
-            .format("{:.2%}", na_rep="")  # Quita los "None"
-            .set_properties(**{
-                'background-color': 'white', # Fondo blanco base
-                'color': 'black',             # Texto negro
-                'border': '1px solid #dee2e6',
-                'text-align': 'center',
-                'padding': '8px'
-            })
-            # Mapa de calor solo en las celdas de datos
+            .format("{:.2%}", na_rep="") # Elimina el texto "None"
+            .set_table_styles(table_style)
+            .set_properties(**{'background-color': 'white', 'color': 'black'}) # Fuerza fondo blanco
+            # Heatmap solo en datos
             .background_gradient(cmap='RdYlGn', axis=None, subset=idx[matriz_final.index, :])
-            # Negritas para los encabezados y estadísticas
+            # Negritas en estadísticas
             .set_properties(subset=idx[['Promedio', 'Máximo', 'Mínimo'], :], **{'font-weight': 'bold'})
+            .to_html()
         )
 
-        # RENDERIZADO COMO HTML (Esto mata el fondo negro de Streamlit)
-        st.write(styled_df.to_html(), unsafe_allow_html=True)
+        # Inyectamos el HTML directamente
+        st.write(styled_html, unsafe_allow_html=True)
         
-        st.markdown(f"<br><p style='color: grey;'>Referencia: Fecha de corte máxima {fecha_max.strftime('%Y-%m')}.</p>", unsafe_allow_html=True)
+        st.caption(f"<br>Referencia: Fecha de corte máxima {fecha_max.strftime('%Y-%m')}.", unsafe_allow_html=True)
 
     else:
         st.error("No se encontraron las columnas necesarias.")
