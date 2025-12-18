@@ -6,13 +6,12 @@ import numpy as np
 # 1. Configuración de la página
 st.set_page_config(page_title="Matriz Vintage Pro", layout="wide")
 
-# CSS para forzar fondo blanco y texto negro en el contenedor de Streamlit
+# CSS para forzar fondo blanco y texto negro
 st.markdown("""
     <style>
     .main { background-color: #FFFFFF; }
-    [data-testid="stDataFrame"] { background-color: #FFFFFF !important; }
-    /* Forzar que el texto de las cabeceras sea negro */
-    div[data-testid="stTable"] th { color: black !important; }
+    .stDataFrame { background-color: #FFFFFF; }
+    [data-testid="stTable"] td, [data-testid="stTable"] th { color: black !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -63,31 +62,23 @@ try:
         # Unimos todo
         matriz_con_stats = pd.concat([matriz_final, stats])
 
-        # --- LIMPIEZA CONTRA EL "NONE" ---
-        matriz_con_stats = matriz_con_stats.fillna(np.nan)
+        # --- LIMPIEZA DEFINITIVA CONTRA EL "NONE" ---
+        # Reemplazamos NaN por None y nos aseguramos de que el DataFrame no tenga valores ocultos
+        matriz_con_stats = matriz_con_stats.replace({np.nan: None})
 
         # 3. Aplicar Estilo
         idx = pd.IndexSlice
         styled_df = (
             matriz_con_stats.style
+            # na_rep="" es lo que hace que la celda se vea vacía
             .format("{:.2%}", na_rep="") 
-            # 1. Fondo blanco base para todas las celdas
+            .background_gradient(cmap='RdYlGn', axis=None, subset=idx[matriz_final.index, :]) 
+            .highlight_null(color='white')
             .set_properties(**{
-                'background-color': 'white',
+                'color': 'black',
                 'border': '1px solid #D3D3D3'
             })
-            # 2. Aplicamos heatmap (esto pone algunas letras blancas automáticamente)
-            .background_gradient(cmap='RdYlGn', axis=None, subset=idx[matriz_final.index, :]) 
-            # 3. SOBRESCRIBIMOS EL COLOR DE LA LETRA A NEGRO (Urgente)
-            # Aplicamos !important para que el heatmap no pueda cambiarlo
-            .set_properties(**{'color': 'black !important'})
-            # 4. Aseguramos blanco para los nulos
-            .highlight_null(color='white')
-            # 5. Negritas en estadísticas (asegurando color negro)
-            .set_properties(
-                subset=idx[['Promedio', 'Máximo', 'Mínimo'], :], 
-                **{'font-weight': 'bold', 'color': 'black !important'}
-            )
+            .set_properties(subset=idx[['Promedio', 'Máximo', 'Mínimo'], :], **{'font-weight': 'bold'})
         )
 
         st.dataframe(styled_df, use_container_width=True)
