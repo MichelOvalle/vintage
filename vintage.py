@@ -33,7 +33,7 @@ try:
     df_raw = load_data()
 
     st.title("📊 Matriz de Capital: Vista con Estadísticas")
-    st.markdown("Ratio de Capital (`saldo_capital_total_cX / capital_cX`) con resumen de Promedio, Máximo y Mínimo.")
+    st.markdown("Ratio de Capital con resumen de Promedio, Máximo y Mínimo. (Celdas vacías ocultas)")
 
     # Definir la fecha base
     fecha_max = df_raw['mes_apertura'].max()
@@ -66,47 +66,46 @@ try:
         # Unimos las series en un DataFrame
         matriz_final = pd.concat(results, axis=1)
         
-        # Orden solicitado: Filas Ascendente (Antiguo -> Nuevo)
+        # Orden: Filas Ascendente (Antiguo -> Nuevo)
         matriz_final = matriz_final.sort_index(ascending=True)
         # Columnas Descendente (Reciente -> Antiguo)
         cols_ordenadas = sorted(matriz_final.columns, reverse=True)
         matriz_final = matriz_final.reindex(columns=cols_ordenadas)
 
         # --- CÁLCULO DE ESTADÍSTICAS ---
-        # Calculamos promedio, máximo y mínimo ignorando los nulos
         stats = pd.DataFrame({
             'Promedio': matriz_final.mean(axis=0),
             'Máximo': matriz_final.max(axis=0),
             'Mínimo': matriz_final.min(axis=0)
         }).T 
         
-        # Concatenamos las estadísticas al final de la matriz
         matriz_con_stats = pd.concat([matriz_final, stats])
 
         # 3. Aplicar Estilo Final
-        # Usamos IndexSlice para aplicar estilos a filas específicas sin errores
         idx = pd.IndexSlice
         
         styled_df = (
             matriz_con_stats.style
+            # El secreto está aquí: na_rep="" elimina el texto "None" o "NaN"
             .format("{:.2%}", na_rep="") 
-            # El heatmap solo se aplica a los datos de las cosechas (excluye filas de estadísticas)
+            # El heatmap solo se aplica a los datos de las cosechas
             .background_gradient(cmap='RdYlGn', axis=None, subset=idx[matriz_final.index, :]) 
             .highlight_null(color='white')
             .set_properties(**{
                 'color': 'black',
                 'border': '1px solid #D3D3D3'
             })
-            # Aplicar negrita solo a las filas de resumen
+            # Aplicar negrita a las filas de resumen
             .set_properties(subset=idx[['Promedio', 'Máximo', 'Mínimo'], :], **{'font-weight': 'bold'})
         )
 
+        # Usamos use_container_width para que ocupe todo el espacio
         st.dataframe(styled_df, use_container_width=True)
         
-        st.caption(f"Referencia: Fecha de corte máxima {fecha_max.strftime('%Y-%m')}. Datos de cosechas limitados a los últimos 24 meses.")
+        st.caption(f"Referencia: Fecha de corte máxima {fecha_max.strftime('%Y-%m')}.")
 
     else:
-        st.error("No se encontraron las columnas c1, c2, etc. en el archivo.")
+        st.error("No se encontraron las columnas necesarias en el archivo.")
 
 except Exception as e:
     st.error(f"Error técnico: {e}")
