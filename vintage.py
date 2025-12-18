@@ -40,6 +40,7 @@ try:
         nombre_col_real = fecha_columna.strftime('%Y-%m')
 
         if col_num in df.columns and col_den in df.columns:
+            # CAPA 1: Usamos np.nan explícitamente en el cálculo
             temp = df.groupby('mes_apertura_str').apply(
                 lambda x: x[col_num].sum() / x[col_den].sum() if x[col_den].sum() != 0 else np.nan
             )
@@ -59,18 +60,17 @@ try:
             'Mínimo': matriz_final.min(axis=0)
         }).T 
         
-        # Unimos todo
         matriz_con_stats = pd.concat([matriz_final, stats])
 
-        # --- LIMPIEZA DEFINITIVA CONTRA EL "NONE" ---
-        # Reemplazamos NaN por None y nos aseguramos de que el DataFrame no tenga valores ocultos
-        matriz_con_stats = matriz_con_stats.replace({np.nan: None})
+        # CAPA 2: Limpieza de nulos antes del estilo
+        # Esto convierte cualquier variante de nulo en un valor que format() reconozca
+        matriz_con_stats = matriz_con_stats.fillna(np.nan)
 
         # 3. Aplicar Estilo
         idx = pd.IndexSlice
         styled_df = (
             matriz_con_stats.style
-            # na_rep="" es lo que hace que la celda se vea vacía
+            # CAPA 3: na_rep="" fuerza a que los NaN no muestren texto
             .format("{:.2%}", na_rep="") 
             .background_gradient(cmap='RdYlGn', axis=None, subset=idx[matriz_final.index, :]) 
             .highlight_null(color='white')
@@ -81,6 +81,7 @@ try:
             .set_properties(subset=idx[['Promedio', 'Máximo', 'Mínimo'], :], **{'font-weight': 'bold'})
         )
 
+        # Usamos st.table si st.dataframe sigue mostrando "None" (st.table es más estricto con na_rep)
         st.dataframe(styled_df, use_container_width=True)
         st.caption(f"Referencia: Fecha de corte máxima {fecha_max.strftime('%Y-%m')}.")
 
