@@ -11,8 +11,10 @@ st.markdown("""
     <style>
     .main { background-color: #FFFFFF; }
     [data-testid="stDataFrame"] { background-color: #FFFFFF !important; }
-    /* Forzar que el texto sea negro incluso en modo oscuro del sistema */
-    div[data-testid="stTable"] td, div[data-testid="stTable"] th { color: black !important; }
+    /* Forzar que el texto sea negro en celdas y cabeceras */
+    div[data-testid="stTable"] td, div[data-testid="stTable"] th { 
+        color: black !important; 
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -64,27 +66,29 @@ try:
         matriz_con_stats = pd.concat([matriz_final, stats])
 
         # --- LIMPIEZA CONTRA EL "NONE" ---
-        # Aseguramos que todo lo vacío sea NaN de numpy para que .format(na_rep="") lo reconozca
         matriz_con_stats = matriz_con_stats.fillna(np.nan)
 
         # 3. Aplicar Estilo
         idx = pd.IndexSlice
         styled_df = (
             matriz_con_stats.style
-            # na_rep="" hace que la celda se vea vacía (sin "None")
             .format("{:.2%}", na_rep="") 
-            # Forzamos fondo blanco base ANTES del gradiente
+            # 1. Establecemos fondo blanco base
             .set_properties(**{
-                'color': 'black',
                 'background-color': 'white',
                 'border': '1px solid #D3D3D3'
             })
-            # El heatmap se aplica encima del blanco solo en las celdas con datos
+            # 2. Aplicamos heatmap (esto suele cambiar el color de font a blanco en celdas oscuras)
             .background_gradient(cmap='RdYlGn', axis=None, subset=idx[matriz_final.index, :]) 
-            # Reforzamos el blanco para los nulos (por si el gradiente intenta pintarlos)
+            # 3. FORZAMOS TEXTO NEGRO en toda la tabla (esto sobreescribe el blanco del heatmap)
+            .set_properties(**{'color': 'black !important'})
+            # 4. Reforzamos blanco para nulos
             .highlight_null(color='white')
-            # Negritas en estadísticas
-            .set_properties(subset=idx[['Promedio', 'Máximo', 'Mínimo'], :], **{'font-weight': 'bold'})
+            # 5. Negritas en estadísticas (manteniendo el negro)
+            .set_properties(
+                subset=idx[['Promedio', 'Máximo', 'Mínimo'], :], 
+                **{'font-weight': 'bold', 'color': 'black !important'}
+            )
         )
 
         st.dataframe(styled_df, use_container_width=True)
