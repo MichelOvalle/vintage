@@ -147,7 +147,7 @@ try:
                 st.dataframe(df_s_s.style.format({'Ratio C1': '{:.2%}'}).background_gradient(cmap='RdYlGn_r'), use_container_width=True)
 
     with tab4:
-        st.title("🚀 Dashboard Ejecutivo")
+        st.title("🚀 Resumen Ejecutivo de Riesgos")
         
         def get_kpi(df, num, den):
             m = sorted(df['mes_apertura_str'].unique())
@@ -170,14 +170,42 @@ try:
             st.metric("Ratio Actual SOLIDAR", f"{r_so:.2%}", f"{d_so:+.2%}", delta_color="inverse")
         
         st.divider()
-        st.subheader("📍 Alertas Críticas (Top 3 Sucursales)")
+        
+        # --- RESUMEN ANALÍTICO DINÁMICO ---
+        st.subheader("📑 Análisis de Variables Críticas")
+        
+        col_txt1, col_txt2 = st.columns(2)
+        
+        with col_txt1:
+            st.markdown("### 🏢 Unidad PR")
+            # Cálculo de variables top para el texto
+            top_suc_pr = df_pr.groupby('nombre_sucursal').apply(lambda x: x['saldo_capital_total_c2'].sum() / x['capital_c2'].sum() if x['capital_c2'].sum() > 0 else 0).idxmax()
+            top_prod_pr = df_pr.groupby('producto_agrupado').apply(lambda x: x['saldo_capital_total_c2'].sum() / x['capital_c2'].sum() if x['capital_c2'].sum() > 0 else 0).idxmax()
+            
+            st.write(f"""
+            * **Comportamiento:** El riesgo se monitorea en el mes 2 (**C2**). Actualmente el indicador se encuentra en **{r_pr:.2%}**.
+            * **Sucursales:** La sucursal con mayor presión de riesgo detectada es **{top_suc_pr}**. Se recomienda revisar la calidad de originación en esta plaza.
+            * **Productos:** El producto **{top_prod_pr}** presenta la mayor sensibilidad. Un ajuste en los criterios de aceptación para este producto podría estabilizar el ratio general.
+            """)
+
+        with col_txt2:
+            st.markdown("### 🤝 Unidad SOLIDAR")
+            top_suc_so = df_sol.groupby('nombre_sucursal').apply(lambda x: x['saldo_capital_total_890_c1'].sum() / x['capital_c1'].sum() if x['capital_c1'].sum() > 0 else 0).idxmax()
+            top_prod_so = df_sol.groupby('producto_agrupado').apply(lambda x: x['saldo_capital_total_890_c1'].sum() / x['capital_c1'].sum() if x['capital_c1'].sum() > 0 else 0).idxmax()
+            
+            st.write(f"""
+            * **Comportamiento:** Análisis preventivo basado en **C1**. El ratio actual de **{r_so:.2%}** indica la salud de la originación inmediata.
+            * **Sucursales:** Se observa una desviación prioritaria en la sucursal **{top_suc_so}**. Es necesario reforzar la cobranza preventiva en los primeros 30 días.
+            * **Productos:** El producto **{top_prod_so}** lidera el índice de riesgo. Evaluar la mezcla de cartera para favorecer productos con mejor desempeño histórico.
+            """)
+
+        st.divider()
+        st.subheader("📍 Alertas de Sucursales (Top 3)")
         a, b = st.columns(2)
         with a:
-            st.write("**Críticas PR**")
-            st.table(df_pr.groupby('nombre_sucursal').apply(lambda x: x['saldo_capital_total_c2'].sum() / x['capital_c2'].sum()).nlargest(3).reset_index(name='Ratio').style.format({'Ratio': '{:.2%}'}))
+            st.table(df_pr.groupby('nombre_sucursal').apply(lambda x: x['saldo_capital_total_c2'].sum() / x['capital_c2'].sum() if x['capital_c2'].sum() > 0 else 0).nlargest(3).reset_index(name='Ratio').style.format({'Ratio': '{:.2%}'}))
         with b:
-            st.write("**Críticas SOLIDAR**")
-            st.table(df_sol.groupby('nombre_sucursal').apply(lambda x: x['saldo_capital_total_890_c1'].sum() / x['capital_c1'].sum()).nlargest(3).reset_index(name='Ratio').style.format({'Ratio': '{:.2%}'}))
+            st.table(df_sol.groupby('nombre_sucursal').apply(lambda x: x['saldo_capital_total_890_c1'].sum() / x['capital_c1'].sum() if x['capital_c1'].sum() > 0 else 0).nlargest(3).reset_index(name='Ratio').style.format({'Ratio': '{:.2%}'}))
 
     st.caption(f"Actualizado: {fecha_max.strftime('%Y-%m')}")
 
