@@ -1,5 +1,7 @@
 streamlit
 pandas
-pyarrow
+numpy
 plotly
-statsmodels
+python-dateutil
+pyarrow
+fastparquet
