@@ -5,10 +5,10 @@ import plotly.express as px
 import plotly.graph_objects as go
 import os
 
-# 1. Configuración de página (Debe ser la primera instrucción)
-st.set_page_config(page_title="Análisis Vintage Pro (Engine: DuckDB)", layout="wide")
+# 1. Configuración de página
+st.set_page_config(page_title="Análisis Vintage Pro (DuckDB)", layout="wide")
 
-# Estilos para asegurar que el texto sea negro y legible
+# Estilos CSS para limpieza visual
 st.markdown("""
     <style>
     .main { background-color: #FFFFFF; }
@@ -26,10 +26,14 @@ def get_filter_options(column_name):
     return [row[0] for row in duckdb.query(query).fetchall()]
 
 def get_vintage_matrix_duckdb(pref_num, pref_den, uen, filters):
-    # CORRECCIÓN DE ERROR: CAST explícito para tratar mes_apertura como DATE
+    # SOLUCIÓN AL ERROR DE FORMATO:
+    # Concatenamos '||-01' al campo mes_apertura para que DuckDB lo reconozca como DATE
+    
+    col_fecha = f"CAST(mes_apertura || '-01' AS DATE)"
+    
     where_clause = f"""
         WHERE uen = '{uen}' 
-        AND CAST(mes_apertura AS DATE) >= (SELECT max(CAST(mes_apertura AS DATE)) - INTERVAL 24 MONTH FROM '{FILE_PATH}')
+        AND {col_fecha} >= (SELECT max({col_fecha}) - INTERVAL 24 MONTH FROM '{FILE_PATH}')
     """
     
     # Manejo de filtros dinámicos
@@ -43,8 +47,8 @@ def get_vintage_matrix_duckdb(pref_num, pref_den, uen, filters):
         vals = "', '".join(filters['orig'])
         where_clause += f" AND PR_Origen_Limpio IN ('{vals}')"
 
-    # Construcción de la consulta SQL: Capital Inicial + 24 meses de ratios
-    cols_sql = f"strftime(CAST(mes_apertura AS DATE), '%Y-%m') as Cosecha, sum({pref_den}1) as 'Capital Inicial'"
+    # Construcción de la consulta SQL
+    cols_sql = f"strftime({col_fecha}, '%Y-%m') as Cosecha, sum({pref_den}1) as 'Capital Inicial'"
     for i in range(1, 25):
         cols_sql += f", sum({pref_num}{i}) / NULLIF(sum({pref_den}{i}), 0) as 'Mes {i}'"
     
@@ -90,8 +94,8 @@ try:
                 )
 
         with tab2:
-            st.title("Top 5 Productos Críticos (Cosecha Reciente)")
-            # Consultas SQL para los gráficos
+            st.title("Top 5 Productos Críticos")
+            # Consultas SQL para los gráficos con corrección de tipos
             q_pr = f"SELECT producto_agrupado, sum(saldo_capital_total_c2)/NULLIF(sum(capital_c2), 0) as Ratio FROM '{FILE_PATH}' WHERE uen='PR' GROUP BY 1 ORDER BY 2 DESC LIMIT 5"
             q_sol = f"SELECT producto_agrupado, sum(saldo_capital_total_890_c1)/NULLIF(sum(capital_c1), 0) as Ratio FROM '{FILE_PATH}' WHERE uen='SOLIDAR' GROUP BY 1 ORDER BY 2 DESC LIMIT 5"
             
