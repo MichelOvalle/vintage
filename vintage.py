@@ -19,6 +19,7 @@ st.markdown("""
 
 @st.cache_data
 def load_data():
+    # Asegúrate de que este archivo esté en la misma carpeta
     df = pd.read_parquet("vintage_acum.parquet")
     if 'mes_apertura' in df.columns:
         df['mes_apertura'] = pd.to_datetime(df['mes_apertura'])
@@ -123,7 +124,7 @@ try:
     df_24['mes_apertura_str'] = df_24['mes_apertura'].dt.strftime('%Y-%m')
 
     # --- TABS ---
-    tab1, tab2, tab3 = st.tabs(["📋 Matrices Vintage", "📈 Curvas, C2 y Saldo", "📍 Detalle por Sucursal"])
+    tab1, tab2, tab3 = st.tabs(["📋 Matrices Vintage", "📈 Curvas, C2 y Saldo", "📍 Detalle de Desempeño"])
 
     df_pr = df_24[df_24['uen'] == 'PR']
     df_solidar = df_24[df_24['uen'] == 'SOLIDAR']
@@ -163,21 +164,11 @@ try:
             fig_c2_sol = crear_grafico_linea_c2(df_solidar, 'saldo_capital_total_890_c', 'capital_c', "Ratio C2 - UEN: SOLIDAR", "#d62728")
             if fig_c2_sol: st.plotly_chart(fig_c2_sol, use_container_width=True)
 
-        st.divider()
-        
-        st.subheader("Evolución del Saldo Capital Total por Origen (PR)")
-        if not df_pr.empty:
-            df_stack = df_pr.groupby(['mes_apertura_str', 'PR_Origen_Limpio'])['saldo_capital_total'].sum().reset_index()
-            df_stack.columns = ['Cosecha', 'Origen', 'Saldo']
-            df_stack['Saldo'] = pd.to_numeric(df_stack['Saldo'], errors='coerce').fillna(0)
-            fig_stack = px.bar(df_stack, x='Cosecha', y='Saldo', color='Origen', color_discrete_map={'Fisico': '#005b7f', 'Digital': '#f37021'}, text_auto='.2s')
-            fig_stack.update_layout(barmode='stack', plot_bgcolor='white', xaxis={'type': 'category'})
-            fig_stack.update_yaxes(tickprefix="$", tickformat=",.0f", showgrid=True, gridcolor='#eeeeee')
-            st.plotly_chart(fig_stack, use_container_width=True)
-
     with tab3:
-        st.title("📍 Detalle Numérico por Sucursal")
+        st.title("📍 Detalle Numérico: Sucursales y Productos")
         
+        # --- FILA 1: SUCURSALES ---
+        st.markdown("### 🏢 Desempeño por Sucursal")
         col_pr, col_sol = st.columns(2)
         
         with col_pr:
@@ -188,32 +179,43 @@ try:
                 ).reset_index()
                 df_suc_pr.columns = ['Sucursal', 'Ratio C2']
                 df_suc_pr = df_suc_pr.sort_values(by='Ratio C2', ascending=False).dropna()
-                
-                st.dataframe(
-                    df_suc_pr.style.format({'Ratio C2': '{:.2%}'})
-                    .background_gradient(cmap='RdYlGn_r', subset=['Ratio C2']),
-                    use_container_width=True
-                )
-            else:
-                st.info("Sin datos para PR")
+                st.dataframe(df_suc_pr.style.format({'Ratio C2': '{:.2%}'}).background_gradient(cmap='RdYlGn_r', subset=['Ratio C2']), use_container_width=True)
 
         with col_sol:
             st.subheader("UEN: SOLIDAR (Ratio C1)")
             if not df_solidar.empty:
-                # Nota: Para SOLIDAR usamos C1 y el prefijo de saldo 890
                 df_suc_sol = df_solidar.groupby('nombre_sucursal').apply(
                     lambda x: x['saldo_capital_total_890_c1'].sum() / x['capital_c1'].sum() if x['capital_c1'].sum() > 0 else np.nan
                 ).reset_index()
                 df_suc_sol.columns = ['Sucursal', 'Ratio C1']
                 df_suc_sol = df_suc_sol.sort_values(by='Ratio C1', ascending=False).dropna()
-                
-                st.dataframe(
-                    df_suc_sol.style.format({'Ratio C1': '{:.2%}'})
-                    .background_gradient(cmap='RdYlGn_r', subset=['Ratio C1']),
-                    use_container_width=True
-                )
-            else:
-                st.info("Sin datos para SOLIDAR")
+                st.dataframe(df_suc_sol.style.format({'Ratio C1': '{:.2%}'}).background_gradient(cmap='RdYlGn_r', subset=['Ratio C1']), use_container_width=True)
+
+        st.divider()
+
+        # --- FILA 2: PRODUCTOS ---
+        st.markdown("### 📦 Desempeño por Producto Agrupado")
+        col_prod_pr, col_prod_sol = st.columns(2)
+
+        with col_prod_pr:
+            st.subheader("UEN: PR (Ratio C2)")
+            if not df_pr.empty:
+                df_p_pr = df_pr.groupby('producto_agrupado').apply(
+                    lambda x: x['saldo_capital_total_c2'].sum() / x['capital_c2'].sum() if x['capital_c2'].sum() > 0 else np.nan
+                ).reset_index()
+                df_p_pr.columns = ['Producto', 'Ratio C2']
+                df_p_pr = df_p_pr.sort_values(by='Ratio C2', ascending=False).dropna()
+                st.dataframe(df_p_pr.style.format({'Ratio C2': '{:.2%}'}).background_gradient(cmap='RdYlGn_r', subset=['Ratio C2']), use_container_width=True)
+
+        with col_prod_sol:
+            st.subheader("UEN: SOLIDAR (Ratio C1)")
+            if not df_solidar.empty:
+                df_p_sol = df_solidar.groupby('producto_agrupado').apply(
+                    lambda x: x['saldo_capital_total_890_c1'].sum() / x['capital_c1'].sum() if x['capital_c1'].sum() > 0 else np.nan
+                ).reset_index()
+                df_p_sol.columns = ['Producto', 'Ratio C1']
+                df_p_sol = df_p_sol.sort_values(by='Ratio C1', ascending=False).dropna()
+                st.dataframe(df_p_sol.style.format({'Ratio C1': '{:.2%}'}).background_gradient(cmap='RdYlGn_r', subset=['Ratio C1']), use_container_width=True)
 
     st.caption(f"Referencia: Datos actualizados hasta {fecha_max.strftime('%Y-%m')}.")
 
