@@ -147,22 +147,20 @@ try:
     if f_producto: df_base = df_base[df_base['producto_agrupado'].isin(f_producto)]
     if f_origen: df_base = df_base[df_base['PR_Origen_Limpio'].isin(f_origen)]
 
-    # Cálculo de fechas
     fecha_max = df_raw['mes_apertura'].max()
     fecha_inicio_24 = fecha_max - pd.DateOffset(months=24)
 
-    # DATAFRAME FILTRADO (Tab 1 y 2)
+    # DF FILTRADO (Tab 1 y 2)
     df_24 = df_base[df_base['mes_apertura'] >= fecha_inicio_24].copy()
     df_24['mes_apertura_str'] = df_24['mes_apertura'].dt.strftime('%Y-%m')
 
-    # DATAFRAME GLOBAL (Tab 3) - Ignora filtros de sidebar
+    # DF GLOBAL (Tab 3)
     df_24_global = df_raw[df_raw['mes_apertura'] >= fecha_inicio_24].copy()
     df_24_global['mes_apertura_str'] = df_24_global['mes_apertura'].dt.strftime('%Y-%m')
 
     # --- TABS ---
     tab1, tab2, tab3 = st.tabs(["📋 Vintage", "📈 Curvas y Tendencias", "📍 Detalle de Desempeño"])
 
-    # Subsets para Tab 1 y 2 (Filtrados)
     df_pr = df_24[df_24['uen'] == 'PR']
     df_solidar = df_24[df_24['uen'] == 'SOLIDAR']
 
@@ -200,30 +198,44 @@ try:
             if fig_c2_sol: st.plotly_chart(fig_c2_sol, use_container_width=True)
             
         st.divider()
-        st.subheader("⚠️ Top 4 Productos con Mayor Mora (C2) - UEN: PR")
-        if not df_pr.empty:
-            peores_prod = df_pr.groupby('producto_agrupado').apply(
-                lambda x: x['saldo_capital_total_c2'].sum() / x['capital_c2'].sum() if x['capital_c2'].sum() > 0 else 0
-            ).sort_values(ascending=False).head(4).index.tolist()
-            df_peores = df_pr[df_pr['producto_agrupado'].isin(peores_prod)]
-            df_trend_peores = df_peores.groupby(['mes_apertura_str', 'producto_agrupado']).apply(
-                lambda x: x['saldo_capital_total_c2'].sum() / x['capital_c2'].sum() if x['capital_c2'].sum() > 0 else np.nan
-            ).reset_index()
-            df_trend_peores.columns = ['Cosecha', 'Producto', 'Ratio C2']
-            fig_peores = px.line(df_trend_peores, x='Cosecha', y='Ratio C2', color='Producto', title="Evolución Histórica C2 - Productos Críticos", markers=True)
-            fig_peores.update_layout(plot_bgcolor='white', yaxis_tickformat='.1%', xaxis={'type': 'category'})
-            st.plotly_chart(fig_peores, use_container_width=True)
+        col_t1, col_t2 = st.columns(2)
+        with col_t1:
+            st.subheader("⚠️ Top 4 Productos Críticos (C2) - PR")
+            if not df_pr.empty:
+                peores_prod = df_pr.groupby('producto_agrupado').apply(
+                    lambda x: x['saldo_capital_total_c2'].sum() / x['capital_c2'].sum() if x['capital_c2'].sum() > 0 else 0
+                ).sort_values(ascending=False).head(4).index.tolist()
+                df_peores = df_pr[df_pr['producto_agrupado'].isin(peores_prod)]
+                df_trend_peores = df_peores.groupby(['mes_apertura_str', 'producto_agrupado']).apply(
+                    lambda x: x['saldo_capital_total_c2'].sum() / x['capital_c2'].sum() if x['capital_c2'].sum() > 0 else np.nan
+                ).reset_index()
+                df_trend_peores.columns = ['Cosecha', 'Producto', 'Ratio C2']
+                fig_peores = px.line(df_trend_peores, x='Cosecha', y='Ratio C2', color='Producto', title="Histórico C2 - PR", markers=True)
+                fig_peores.update_layout(plot_bgcolor='white', yaxis_tickformat='.1%', xaxis={'type': 'category'})
+                st.plotly_chart(fig_peores, use_container_width=True)
+
+        with col_t2:
+            st.subheader("⚠️ Top 4 Productos Críticos (C1) - SOLIDAR")
+            if not df_solidar.empty:
+                peores_prod_sol = df_solidar.groupby('producto_agrupado').apply(
+                    lambda x: x['saldo_capital_total_890_c1'].sum() / x['capital_c1'].sum() if x['capital_c1'].sum() > 0 else 0
+                ).sort_values(ascending=False).head(4).index.tolist()
+                df_peores_sol = df_solidar[df_solidar['producto_agrupado'].isin(peores_prod_sol)]
+                df_trend_peores_sol = df_peores_sol.groupby(['mes_apertura_str', 'producto_agrupado']).apply(
+                    lambda x: x['saldo_capital_total_890_c1'].sum() / x['capital_c1'].sum() if x['capital_c1'].sum() > 0 else np.nan
+                ).reset_index()
+                df_trend_peores_sol.columns = ['Cosecha', 'Producto', 'Ratio C1']
+                fig_peores_sol = px.line(df_trend_peores_sol, x='Cosecha', y='Ratio C1', color='Producto', title="Histórico C1 - SOLIDAR", markers=True)
+                fig_peores_sol.update_layout(plot_bgcolor='white', yaxis_tickformat='.1%', xaxis={'type': 'category'})
+                st.plotly_chart(fig_peores_sol, use_container_width=True)
 
     with tab3:
-        # DATOS GLOBALES PARA TAB 3
         df_pr_tab3 = df_24_global[df_24_global['uen'] == 'PR']
         df_sol_tab3 = df_24_global[df_24_global['uen'] == 'SOLIDAR']
-        
         fecha_penultima = fecha_max - pd.DateOffset(months=1)
         st.title("📍 Análisis Sucursales y productos (Datos Globales)")
         st.info("💡 Esta pestaña muestra el desempeño total de la empresa, ignorando los filtros de la barra lateral.")
         
-        # --- SECCIÓN: ANÁLISIS DINÁMICO ---
         st.subheader("📝 Resumen de Hallazgos")
         with st.expander("Ver Resumen Narrativo", expanded=True):
             res_pr = generar_resumen(df_pr_tab3, fecha_penultima, 'saldo_capital_total_c2', 'capital_c2', "PR", "C2")
@@ -233,52 +245,32 @@ try:
             st.markdown(res_sol)
 
         st.divider()
-
-        # --- SECCIÓN: MATRICES CRUZADAS ---
         st.markdown("### 🔲 Matrices Cruzadas: Sucursal vs Producto")
         col_m1, col_m2 = st.columns(2)
-
         with col_m1:
             st.subheader(f"Matriz C2 - PR ({fecha_penultima.strftime('%b %Y')})")
             if not df_pr_tab3.empty:
                 df_m_pr = df_pr_tab3[df_pr_tab3['mes_apertura'] == fecha_penultima]
-                pivot_pr = df_m_pr.pivot_table(index='nombre_sucursal', columns='producto_agrupado', 
-                                             values=['saldo_capital_total_c2', 'capital_c2'], aggfunc='sum')
+                pivot_pr = df_m_pr.pivot_table(index='nombre_sucursal', columns='producto_agrupado', values=['saldo_capital_total_c2', 'capital_c2'], aggfunc='sum')
                 matriz_pr = pivot_pr['saldo_capital_total_c2'] / pivot_pr['capital_c2']
-                st.dataframe(
-                    matriz_pr.style.format("{:.2%}", na_rep="-")
-                    .background_gradient(cmap='RdYlGn_r', axis=None)
-                    .highlight_null(color='white')
-                    .set_properties(**{'color': 'black', 'border': '1px solid #eeeeee'}), 
-                    use_container_width=True
-                )
+                st.dataframe(matriz_pr.style.format("{:.2%}", na_rep="-").background_gradient(cmap='RdYlGn_r', axis=None).highlight_null(color='white').set_properties(**{'color': 'black', 'border': '1px solid #eeeeee'}), use_container_width=True)
 
         with col_m2:
             st.subheader(f"Matriz C1 - SOLIDAR ({fecha_max.strftime('%b %Y')})")
             if not df_sol_tab3.empty:
                 df_m_sol = df_sol_tab3[df_sol_tab3['mes_apertura'] == fecha_max]
-                pivot_sol = df_m_sol.pivot_table(index='nombre_sucursal', columns='producto_agrupado', 
-                                               values=['saldo_capital_total_890_c1', 'capital_c1'], aggfunc='sum')
+                pivot_sol = df_m_sol.pivot_table(index='nombre_sucursal', columns='producto_agrupado', values=['saldo_capital_total_890_c1', 'capital_c1'], aggfunc='sum')
                 matriz_sol = pivot_sol['saldo_capital_total_890_c1'] / pivot_sol['capital_c1']
-                st.dataframe(
-                    matriz_sol.style.format("{:.2%}", na_rep="-")
-                    .background_gradient(cmap='RdYlGn_r', axis=None)
-                    .highlight_null(color='white')
-                    .set_properties(**{'color': 'black', 'border': '1px solid #eeeeee'}), 
-                    use_container_width=True
-                )
+                st.dataframe(matriz_sol.style.format("{:.2%}", na_rep="-").background_gradient(cmap='RdYlGn_r', axis=None).highlight_null(color='white').set_properties(**{'color': 'black', 'border': '1px solid #eeeeee'}), use_container_width=True)
 
         st.divider()
         st.markdown("### 🏢 Desempeño Individual")
         col_ind_1, col_ind_2 = st.columns(2)
-        
         with col_ind_1:
             st.subheader(f"Sucursales PR (C2)")
             if not df_pr_tab3.empty:
                 df_fil_pr = df_pr_tab3[df_pr_tab3['mes_apertura'] == fecha_penultima]
-                df_s_pr = df_fil_pr.groupby('nombre_sucursal').apply(
-                    lambda x: x['saldo_capital_total_c2'].sum() / x['capital_c2'].sum() if x['capital_c2'].sum() > 0 else np.nan
-                ).reset_index()
+                df_s_pr = df_fil_pr.groupby('nombre_sucursal').apply(lambda x: x['saldo_capital_total_c2'].sum() / x['capital_c2'].sum() if x['capital_c2'].sum() > 0 else np.nan).reset_index()
                 df_s_pr.columns = ['Sucursal', 'Ratio C2']
                 st.dataframe(df_s_pr.sort_values(by='Ratio C2', ascending=False).style.format({'Ratio C2': '{:.2%}'}).background_gradient(cmap='RdYlGn_r').highlight_null(color='white').set_properties(**{'color': 'black'}), use_container_width=True)
 
@@ -286,13 +278,11 @@ try:
             st.subheader(f"Sucursales SOLIDAR (C1)")
             if not df_sol_tab3.empty:
                 df_fil_sol = df_sol_tab3[df_sol_tab3['mes_apertura'] == fecha_max]
-                df_s_sol = df_fil_sol.groupby('nombre_sucursal').apply(
-                    lambda x: x['saldo_capital_total_890_c1'].sum() / x['capital_c1'].sum() if x['capital_c1'].sum() > 0 else np.nan
-                ).reset_index()
+                df_s_sol = df_fil_sol.groupby('nombre_sucursal').apply(lambda x: x['saldo_capital_total_890_c1'].sum() / x['capital_c1'].sum() if x['capital_c1'].sum() > 0 else np.nan).reset_index()
                 df_s_sol.columns = ['Sucursal', 'Ratio C1']
                 st.dataframe(df_s_sol.sort_values(by='Ratio C1', ascending=False).style.format({'Ratio C1': '{:.2%}'}).background_gradient(cmap='RdYlGn_r').highlight_null(color='white').set_properties(**{'color': 'black'}), use_container_width=True)
 
-    st.caption(f"Referencia: Datos procesados hasta {fecha_max.strftime('%Y-%m')}. Thought Partner: Gemini.")
+    st.caption(f"Referencia: Datos procesados hasta {fecha_max.strftime('%Y-%m')}. Usuario: Michel Ovalle.")
 
 except Exception as e:
     st.error(f"Error técnico detectado: {e}")
