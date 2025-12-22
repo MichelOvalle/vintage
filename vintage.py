@@ -19,7 +19,6 @@ st.markdown("""
 
 @st.cache_data
 def load_data():
-    # Asegúrate de que este archivo esté en la misma carpeta
     df = pd.read_parquet("vintage_acum.parquet")
     if 'mes_apertura' in df.columns:
         df['mes_apertura'] = pd.to_datetime(df['mes_apertura'])
@@ -124,7 +123,7 @@ try:
     df_24['mes_apertura_str'] = df_24['mes_apertura'].dt.strftime('%Y-%m')
 
     # --- TABS ---
-    tab1, tab2, tab3 = st.tabs(["📋 Matrices Vintage", "📈 Curvas, C2 y Saldo", "📍 Detalle de Desempeño"])
+    tab1, tab2, tab3 = st.tabs(["📋 Matrices Vintage", "📈 Curvas y Tendencias", "📍 Detalle de Desempeño"])
 
     df_pr = df_24[df_24['uen'] == 'PR']
     df_solidar = df_24[df_24['uen'] == 'SOLIDAR']
@@ -158,11 +157,39 @@ try:
         st.subheader("Tendencia de Cohorte C2")
         col1, col2 = st.columns(2)
         with col1:
-            fig_c2_pr = crear_grafico_linea_c2(df_pr, 'saldo_capital_total_c', 'capital_c', "Ratio C2 - UEN: PR", "#1f77b4")
+            fig_c2_pr = crear_grafico_linea_c2(df_pr, 'saldo_capital_total_c', 'capital_c', "Ratio C2 Global - UEN: PR", "#1f77b4")
             if fig_c2_pr: st.plotly_chart(fig_c2_pr, use_container_width=True)
         with col2:
-            fig_c2_sol = crear_grafico_linea_c2(df_solidar, 'saldo_capital_total_890_c', 'capital_c', "Ratio C2 - UEN: SOLIDAR", "#d62728")
+            fig_c2_sol = crear_grafico_linea_c2(df_solidar, 'saldo_capital_total_890_c', 'capital_c', "Ratio C2 Global - UEN: SOLIDAR", "#d62728")
             if fig_c2_sol: st.plotly_chart(fig_c2_sol, use_container_width=True)
+
+        st.divider()
+        
+        # --- NUEVA SECCIÓN: PEORES 4 PRODUCTOS PR (C2) ---
+        st.subheader("⚠️ Top 4 Productos con Mayor Mora (C2) - UEN: PR")
+        if not df_pr.empty:
+            # Calcular ratio C2 por producto para identificar los 4 peores
+            peores_prod = df_pr.groupby('producto_agrupado').apply(
+                lambda x: x['saldo_capital_total_c2'].sum() / x['capital_c2'].sum() if x['capital_c2'].sum() > 0 else 0
+            ).sort_values(ascending=False).head(4).index.tolist()
+
+            # Filtrar datos solo para esos productos
+            df_peores = df_pr[df_pr['producto_agrupado'].isin(peores_prod)]
+            
+            # Calcular tendencia mensual para el gráfico
+            df_trend_peores = df_peores.groupby(['mes_apertura_str', 'producto_agrupado']).apply(
+                lambda x: x['saldo_capital_total_c2'].sum() / x['capital_c2'].sum() if x['capital_c2'].sum() > 0 else np.nan
+            ).reset_index()
+            df_trend_peores.columns = ['Cosecha', 'Producto', 'Ratio C2']
+
+            fig_peores = px.line(df_trend_peores, x='Cosecha', y='Ratio C2', color='Producto', 
+                                 title="Evolución C2 - Los 4 productos más críticos", markers=True)
+            fig_peores.update_layout(plot_bgcolor='white', yaxis_tickformat='.1%', xaxis={'type': 'category'})
+            fig_peores.update_xaxes(showgrid=True, gridcolor='#f0f0f0', tickangle=-45)
+            fig_peores.update_yaxes(showgrid=True, gridcolor='#f0f0f0')
+            st.plotly_chart(fig_peores, use_container_width=True)
+        else:
+            st.info("No hay datos disponibles para el análisis de productos críticos en PR.")
 
     with tab3:
         st.title("📍 Detalle Numérico: Sucursales y Productos")
