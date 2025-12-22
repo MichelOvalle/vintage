@@ -122,13 +122,13 @@ try:
     df_24['mes_apertura_str'] = df_24['mes_apertura'].dt.strftime('%Y-%m')
 
     # --- TABS ---
-    tab1, tab2, tab3 = st.tabs(["📋 Matrices Vintage", "📈 Curvas y Tendencias", "📍 Detalle de Desempeño"])
+    tab1, tab2, tab3 = st.tabs(["📋 Vintage", "📈 Curvas y Tendencias", "📍 Detalle de Desempeño"])
 
     df_pr = df_24[df_24['uen'] == 'PR']
     df_solidar = df_24[df_24['uen'] == 'SOLIDAR']
 
     with tab1:
-        st.title("Reporte de Ratios por Cosecha (Histórico 24m)")
+        st.title("Análisis Vintage (24 meses)")
         m_tabla_pr, m_cap_pr, m_graf_pr = calcular_matriz_datos(df_pr, fecha_max, 'saldo_capital_total_c', 'capital_c')
         if m_tabla_pr is not None:
             st.subheader("📊 Vintage 30 - 150 (UEN: PR)")
@@ -151,7 +151,7 @@ try:
             st.plotly_chart(fig_lines, use_container_width=True)
 
         st.divider()
-        st.subheader("Tendencia de Cohorte C2")
+        st.subheader("Tendencia de comportamiento")
         col1, col2 = st.columns(2)
         with col1:
             fig_c2_pr = crear_grafico_linea_c2(df_pr, 'saldo_capital_total_c', 'capital_c', "Ratio C2 Global - UEN: PR", "#1f77b4")
@@ -177,7 +177,7 @@ try:
 
     with tab3:
         fecha_penultima = fecha_max - pd.DateOffset(months=1)
-        st.title("📍 Detalle Numérico: Sucursales y Productos")
+        st.title("📍 Análisis Sucursales y productos")
         
         # --- SECCIÓN: ANÁLISIS DINÁMICO ---
         st.subheader("📝 Resumen de Hallazgos")
@@ -189,20 +189,18 @@ try:
             suc_data = df_mes.groupby('nombre_sucursal').apply(
                 lambda x: x[pref_num].sum() / x[pref_den].sum() if x[pref_den].sum() > 0 else 0
             )
-            suc_data = suc_data[suc_data > 0] # Ignorar ceros
+            suc_data = suc_data[suc_data > 0]
             if suc_data.empty: return f"Para uen:{uen_name}, no se encontraron ratios mayores a cero."
             
             suc_max, val_max = suc_data.idxmax(), suc_data.max()
             suc_min, val_min = suc_data.idxmin(), suc_data.min()
             
-            # Detalle producto sucursal MAX
             prod_max_df = df_mes[df_mes['nombre_sucursal'] == suc_max].groupby('producto_agrupado').apply(
                 lambda x: x[pref_num].sum() / x[pref_den].sum() if x[pref_den].sum() > 0 else 0
             )
             prod_max_df = prod_max_df[prod_max_df > 0]
             p_max_name, p_max_val = (prod_max_df.idxmax(), prod_max_df.max()) if not prod_max_df.empty else ("N/A", 0)
             
-            # Detalle producto sucursal MIN
             prod_min_df = df_mes[df_mes['nombre_sucursal'] == suc_min].groupby('producto_agrupado').apply(
                 lambda x: x[pref_num].sum() / x[pref_den].sum() if x[pref_den].sum() > 0 else 0
             )
@@ -216,9 +214,7 @@ try:
             )
 
         with st.expander("Ver Resumen Narrativo", expanded=True):
-            # PR -> C2 (Fecha Penúltima)
             res_pr = generar_resumen(df_pr, fecha_penultima, 'saldo_capital_total_c2', 'capital_c2', "PR", "C2")
-            # SOLIDAR -> C1 (Fecha Máxima)
             res_sol = generar_resumen(df_solidar, fecha_max, 'saldo_capital_total_890_c1', 'capital_c1', "SOLIDAR", "C1")
             st.markdown(res_pr)
             st.markdown("---")
@@ -226,7 +222,6 @@ try:
 
         st.divider()
         
-        # --- FILA 1: SUCURSALES ---
         st.markdown("### 🏢 Desempeño por Sucursal")
         col_pr, col_sol = st.columns(2)
         
@@ -253,7 +248,6 @@ try:
                 st.dataframe(df_suc_sol.style.format({'Ratio C1': '{:.2%}'}).background_gradient(cmap='RdYlGn_r', subset=['Ratio C1']), use_container_width=True)
 
         st.divider()
-        # --- FILA 2: PRODUCTOS ---
         st.markdown("### 📦 Desempeño por Producto Agrupado")
         col_p_pr, col_p_sol = st.columns(2)
 
