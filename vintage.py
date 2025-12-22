@@ -163,12 +163,34 @@ try:
             fig_c2_sol = crear_grafico_linea_c2(df_solidar, 'saldo_capital_total_890_c', 'capital_c', "Ratio C2 Global - UEN: SOLIDAR", "#d62728")
             if fig_c2_sol: st.plotly_chart(fig_c2_sol, use_container_width=True)
 
+        st.divider()
+        
+        # --- SECCIÓN RESTAURADA: PEORES 4 PRODUCTOS PR (C2) ---
+        st.subheader("⚠️ Top 4 Productos con Mayor Mora (C2) - UEN: PR")
+        if not df_pr.empty:
+            # Seleccionamos los peores 4 basados en el ratio acumulado de C2
+            peores_prod = df_pr.groupby('producto_agrupado').apply(
+                lambda x: x['saldo_capital_total_c2'].sum() / x['capital_c2'].sum() if x['capital_c2'].sum() > 0 else 0
+            ).sort_values(ascending=False).head(4).index.tolist()
+
+            df_peores = df_pr[df_pr['producto_agrupado'].isin(peores_prod)]
+            
+            df_trend_peores = df_peores.groupby(['mes_apertura_str', 'producto_agrupado']).apply(
+                lambda x: x['saldo_capital_total_c2'].sum() / x['capital_c2'].sum() if x['capital_c2'].sum() > 0 else np.nan
+            ).reset_index()
+            df_trend_peores.columns = ['Cosecha', 'Producto', 'Ratio C2']
+
+            fig_peores = px.line(df_trend_peores, x='Cosecha', y='Ratio C2', color='Producto', 
+                                 title="Evolución Histórica C2 - Productos Críticos", markers=True)
+            fig_peores.update_layout(plot_bgcolor='white', yaxis_tickformat='.1%', xaxis={'type': 'category'})
+            st.plotly_chart(fig_peores, use_container_width=True)
+
     with tab3:
-        # --- DEFINICIÓN DE FECHAS CLAVE ---
-        fecha_penultima = fecha_max - pd.DateOffset(months=1) # 2025-10
+        # Fechas para consistencia del 1.6%
+        fecha_penultima = fecha_max - pd.DateOffset(months=1)
         
         st.title("📍 Detalle Numérico: Sucursales y Productos")
-        st.info(f"Nota: Los ratios C2 se muestran para la cosecha de **{fecha_penultima.strftime('%B %Y')}**.")
+        st.info(f"Nota: Los ratios C2 corresponden a la cosecha de **{fecha_penultima.strftime('%B %Y')}**.")
         
         # --- FILA 1: SUCURSALES ---
         st.markdown("### 🏢 Desempeño por Sucursal")
@@ -177,7 +199,6 @@ try:
         with col_pr:
             st.subheader("UEN: PR (Ratio C2)")
             if not df_pr.empty:
-                # Filtrar específicamente el penúltimo mes para que dé el 1.6%
                 df_filtro_pr = df_pr[df_pr['mes_apertura'] == fecha_penultima]
                 df_suc_pr = df_filtro_pr.groupby('nombre_sucursal').apply(
                     lambda x: x['saldo_capital_total_c2'].sum() / x['capital_c2'].sum() if x['capital_c2'].sum() > 0 else np.nan
@@ -189,7 +210,6 @@ try:
         with col_sol:
             st.subheader("UEN: SOLIDAR (Ratio C1)")
             if not df_solidar.empty:
-                # C1 se mide sobre el último mes disponible
                 df_filtro_sol = df_solidar[df_solidar['mes_apertura'] == fecha_max]
                 df_suc_sol = df_filtro_sol.groupby('nombre_sucursal').apply(
                     lambda x: x['saldo_capital_total_890_c1'].sum() / x['capital_c1'].sum() if x['capital_c1'].sum() > 0 else np.nan
@@ -207,7 +227,6 @@ try:
         with col_prod_pr:
             st.subheader("UEN: PR (Ratio C2)")
             if not df_pr.empty:
-                # Filtrar específicamente el penúltimo mes (2025-10)
                 df_filtro_p_pr = df_pr[df_pr['mes_apertura'] == fecha_penultima]
                 df_p_pr = df_filtro_p_pr.groupby('producto_agrupado').apply(
                     lambda x: x['saldo_capital_total_c2'].sum() / x['capital_c2'].sum() if x['capital_c2'].sum() > 0 else np.nan
@@ -219,7 +238,6 @@ try:
         with col_prod_sol:
             st.subheader("UEN: SOLIDAR (Ratio C1)")
             if not df_solidar.empty:
-                # C1 para el último mes
                 df_filtro_p_sol = df_solidar[df_solidar['mes_apertura'] == fecha_max]
                 df_p_sol = df_filtro_p_sol.groupby('producto_agrupado').apply(
                     lambda x: x['saldo_capital_total_890_c1'].sum() / x['capital_c1'].sum() if x['capital_c1'].sum() > 0 else np.nan
