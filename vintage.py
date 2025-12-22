@@ -8,7 +8,7 @@ import plotly.express as px
 # 1. Configuración de la página
 st.set_page_config(page_title="Análisis Vintage Pro", layout="wide")
 
-# CSS para forzar limpieza visual
+# CSS para asegurar limpieza visual y texto negro
 st.markdown("""
     <style>
     .main { background-color: #FFFFFF; }
@@ -76,7 +76,7 @@ def renderizar_estilo(matriz_ratios, df_capital_total):
         matriz_con_stats.style
         .format(formatos, na_rep="") 
         .background_gradient(cmap='RdYlGn_r', axis=None, subset=idx[matriz_ratios.index, matriz_ratios.columns]) 
-        .highlight_null(color='white') # Limpia las celdas vacías
+        .highlight_null(color='white')
         .set_properties(**{'color': 'black', 'border': '1px solid #D3D3D3'})
         .set_properties(subset=idx[['Promedio', 'Máximo', 'Mínimo'], :], **{'font-weight': 'bold'})
         .set_properties(subset=idx[:, 'Capital Total'], **{'font-weight': 'bold', 'background-color': '#f0f2f6'})
@@ -132,8 +132,8 @@ def generar_resumen(df_uen, fecha_target, pref_num, pref_den, uen_name, cohorte_
 try:
     df_raw = load_data()
     
-    # --- SIDEBAR ---
-    st.sidebar.header("Filtros Globales")
+    # --- SIDEBAR FILTROS (Afectan Tab 1 y Tab 2) ---
+    st.sidebar.header("Filtros Globales (Tabs 1 y 2)")
     def crear_filtro(label, col_name):
         options = sorted(df_raw[col_name].dropna().unique())
         return st.sidebar.multiselect(label, options)
@@ -147,14 +147,22 @@ try:
     if f_producto: df_base = df_base[df_base['producto_agrupado'].isin(f_producto)]
     if f_origen: df_base = df_base[df_base['PR_Origen_Limpio'].isin(f_origen)]
 
+    # Cálculo de fechas
     fecha_max = df_raw['mes_apertura'].max()
     fecha_inicio_24 = fecha_max - pd.DateOffset(months=24)
+
+    # DATAFRAME FILTRADO (Tab 1 y 2)
     df_24 = df_base[df_base['mes_apertura'] >= fecha_inicio_24].copy()
     df_24['mes_apertura_str'] = df_24['mes_apertura'].dt.strftime('%Y-%m')
+
+    # DATAFRAME GLOBAL (Tab 3) - Ignora filtros de sidebar
+    df_24_global = df_raw[df_raw['mes_apertura'] >= fecha_inicio_24].copy()
+    df_24_global['mes_apertura_str'] = df_24_global['mes_apertura'].dt.strftime('%Y-%m')
 
     # --- TABS ---
     tab1, tab2, tab3 = st.tabs(["📋 Vintage", "📈 Curvas y Tendencias", "📍 Detalle de Desempeño"])
 
+    # Subsets para Tab 1 y 2 (Filtrados)
     df_pr = df_24[df_24['uen'] == 'PR']
     df_solidar = df_24[df_24['uen'] == 'SOLIDAR']
 
@@ -207,52 +215,55 @@ try:
             st.plotly_chart(fig_peores, use_container_width=True)
 
     with tab3:
+        # DATOS GLOBALES PARA TAB 3
+        df_pr_tab3 = df_24_global[df_24_global['uen'] == 'PR']
+        df_sol_tab3 = df_24_global[df_24_global['uen'] == 'SOLIDAR']
+        
         fecha_penultima = fecha_max - pd.DateOffset(months=1)
-        st.title("📍 Análisis Sucursales y productos")
+        st.title("📍 Análisis Sucursales y productos (Datos Globales)")
+        st.info("💡 Esta pestaña muestra el desempeño total de la empresa, ignorando los filtros de la barra lateral.")
         
         # --- SECCIÓN: ANÁLISIS DINÁMICO ---
         st.subheader("📝 Resumen de Hallazgos")
         with st.expander("Ver Resumen Narrativo", expanded=True):
-            res_pr = generar_resumen(df_pr, fecha_penultima, 'saldo_capital_total_c2', 'capital_c2', "PR", "C2")
-            res_sol = generar_resumen(df_solidar, fecha_max, 'saldo_capital_total_890_c1', 'capital_c1', "SOLIDAR", "C1")
+            res_pr = generar_resumen(df_pr_tab3, fecha_penultima, 'saldo_capital_total_c2', 'capital_c2', "PR", "C2")
+            res_sol = generar_resumen(df_sol_tab3, fecha_max, 'saldo_capital_total_890_c1', 'capital_c1', "SOLIDAR", "C1")
             st.markdown(res_pr)
             st.markdown("---")
             st.markdown(res_sol)
 
         st.divider()
 
-        # --- SECCIÓN: MATRICES CRUZADAS (FIXED) ---
+        # --- SECCIÓN: MATRICES CRUZADAS ---
         st.markdown("### 🔲 Matrices Cruzadas: Sucursal vs Producto")
         col_m1, col_m2 = st.columns(2)
 
         with col_m1:
             st.subheader(f"Matriz C2 - PR ({fecha_penultima.strftime('%b %Y')})")
-            if not df_pr.empty:
-                df_m_pr = df_pr[df_pr['mes_apertura'] == fecha_penultima]
+            if not df_pr_tab3.empty:
+                df_m_pr = df_pr_tab3[df_pr_tab3['mes_apertura'] == fecha_penultima]
                 pivot_pr = df_m_pr.pivot_table(index='nombre_sucursal', columns='producto_agrupado', 
                                              values=['saldo_capital_total_c2', 'capital_c2'], aggfunc='sum')
                 matriz_pr = pivot_pr['saldo_capital_total_c2'] / pivot_pr['capital_c2']
-                
                 st.dataframe(
                     matriz_pr.style.format("{:.2%}", na_rep="-")
                     .background_gradient(cmap='RdYlGn_r', axis=None)
-                    .highlight_null(color='white') # <--- ESTO ELIMINA LOS CUADROS NEGROS
+                    .highlight_null(color='white')
                     .set_properties(**{'color': 'black', 'border': '1px solid #eeeeee'}), 
                     use_container_width=True
                 )
 
         with col_m2:
             st.subheader(f"Matriz C1 - SOLIDAR ({fecha_max.strftime('%b %Y')})")
-            if not df_solidar.empty:
-                df_m_sol = df_solidar[df_solidar['mes_apertura'] == fecha_max]
+            if not df_sol_tab3.empty:
+                df_m_sol = df_sol_tab3[df_sol_tab3['mes_apertura'] == fecha_max]
                 pivot_sol = df_m_sol.pivot_table(index='nombre_sucursal', columns='producto_agrupado', 
                                                values=['saldo_capital_total_890_c1', 'capital_c1'], aggfunc='sum')
                 matriz_sol = pivot_sol['saldo_capital_total_890_c1'] / pivot_sol['capital_c1']
-                
                 st.dataframe(
                     matriz_sol.style.format("{:.2%}", na_rep="-")
                     .background_gradient(cmap='RdYlGn_r', axis=None)
-                    .highlight_null(color='white') # <--- ESTO ELIMINA LOS CUADROS NEGROS
+                    .highlight_null(color='white')
                     .set_properties(**{'color': 'black', 'border': '1px solid #eeeeee'}), 
                     use_container_width=True
                 )
@@ -263,8 +274,8 @@ try:
         
         with col_ind_1:
             st.subheader(f"Sucursales PR (C2)")
-            if not df_pr.empty:
-                df_fil_pr = df_pr[df_pr['mes_apertura'] == fecha_penultima]
+            if not df_pr_tab3.empty:
+                df_fil_pr = df_pr_tab3[df_pr_tab3['mes_apertura'] == fecha_penultima]
                 df_s_pr = df_fil_pr.groupby('nombre_sucursal').apply(
                     lambda x: x['saldo_capital_total_c2'].sum() / x['capital_c2'].sum() if x['capital_c2'].sum() > 0 else np.nan
                 ).reset_index()
@@ -273,8 +284,8 @@ try:
 
         with col_ind_2:
             st.subheader(f"Sucursales SOLIDAR (C1)")
-            if not df_solidar.empty:
-                df_fil_sol = df_solidar[df_solidar['mes_apertura'] == fecha_max]
+            if not df_sol_tab3.empty:
+                df_fil_sol = df_sol_tab3[df_sol_tab3['mes_apertura'] == fecha_max]
                 df_s_sol = df_fil_sol.groupby('nombre_sucursal').apply(
                     lambda x: x['saldo_capital_total_890_c1'].sum() / x['capital_c1'].sum() if x['capital_c1'].sum() > 0 else np.nan
                 ).reset_index()
