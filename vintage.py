@@ -26,13 +26,13 @@ def get_filter_options(column_name):
     return [row[0] for row in duckdb.query(query).fetchall()]
 
 def get_vintage_matrix_duckdb(pref_num, pref_den, uen, filters):
-    # CAST explícito para evitar el error de VARCHAR vs INTERVAL
+    # CORRECCIÓN DE ERROR: CAST explícito para tratar mes_apertura como DATE
     where_clause = f"""
         WHERE uen = '{uen}' 
         AND CAST(mes_apertura AS DATE) >= (SELECT max(CAST(mes_apertura AS DATE)) - INTERVAL 24 MONTH FROM '{FILE_PATH}')
     """
     
-    # Manejo robusto de filtros dinámicos
+    # Manejo de filtros dinámicos
     if filters.get('suc'):
         vals = "', '".join(filters['suc'])
         where_clause += f" AND nombre_sucursal IN ('{vals}')"
@@ -44,7 +44,6 @@ def get_vintage_matrix_duckdb(pref_num, pref_den, uen, filters):
         where_clause += f" AND PR_Origen_Limpio IN ('{vals}')"
 
     # Construcción de la consulta SQL: Capital Inicial + 24 meses de ratios
-    # Usamos pref_den + '1' para el Capital Inicial de la cohorte
     cols_sql = f"strftime(CAST(mes_apertura AS DATE), '%Y-%m') as Cosecha, sum({pref_den}1) as 'Capital Inicial'"
     for i in range(1, 25):
         cols_sql += f", sum({pref_num}{i}) / NULLIF(sum({pref_den}{i}), 0) as 'Mes {i}'"
@@ -55,7 +54,7 @@ def get_vintage_matrix_duckdb(pref_num, pref_den, uen, filters):
 # --- LÓGICA PRINCIPAL ---
 try:
     if os.path.exists(FILE_PATH):
-        # --- SIDEBAR: LOS 3 FILTROS SOLICITADOS ---
+        # --- SIDEBAR: LOS 3 FILTROS ---
         st.sidebar.header("Filtros Globales")
         f_suc = st.sidebar.multiselect("Sucursal", get_filter_options("nombre_sucursal"))
         f_prod = st.sidebar.multiselect("Producto Agrupado", get_filter_options("producto_agrupado"))
@@ -67,13 +66,12 @@ try:
         tab1, tab2, tab3 = st.tabs(["📋 Vintage", "📈 Tendencias", "📍 Detalle Global"])
 
         with tab1:
-            st.title("Análisis Vintage (Carga Optimizada)")
+            st.title("Análisis Vintage (Carga Optimizada DuckDB)")
             
             # Bloque UEN: PR
             m_pr = get_vintage_matrix_duckdb('saldo_capital_total_c', 'capital_c', 'PR', filtros)
             if not m_pr.empty:
                 st.subheader("📊 UEN: PR (Vintage 30-150)")
-                # Aplicamos el semáforo rojo-amarillo-verde
                 st.dataframe(
                     m_pr.style.format({"Capital Inicial": "${:,.0f}"} | {c: "{:.2%}" for c in m_pr.columns if 'Mes' in c}, na_rep="")
                     .background_gradient(cmap='RdYlGn_r', axis=None, subset=[c for c in m_pr.columns if 'Mes' in c]),
@@ -92,8 +90,8 @@ try:
                 )
 
         with tab2:
-            st.title("Top 5 Productos Críticos")
-            # Consultas rápidas para los gráficos de barras
+            st.title("Top 5 Productos Críticos (Cosecha Reciente)")
+            # Consultas SQL para los gráficos
             q_pr = f"SELECT producto_agrupado, sum(saldo_capital_total_c2)/NULLIF(sum(capital_c2), 0) as Ratio FROM '{FILE_PATH}' WHERE uen='PR' GROUP BY 1 ORDER BY 2 DESC LIMIT 5"
             q_sol = f"SELECT producto_agrupado, sum(saldo_capital_total_890_c1)/NULLIF(sum(capital_c1), 0) as Ratio FROM '{FILE_PATH}' WHERE uen='SOLIDAR' GROUP BY 1 ORDER BY 2 DESC LIMIT 5"
             
@@ -107,7 +105,7 @@ try:
 
         with tab3:
             st.title("📍 Desempeño Sucursales")
-            st.info("💡 Esta sección muestra los datos globales de riesgo acumulado.")
+            st.info("💡 Top 10 sucursales con mayor ratio de riesgo acumulado.")
             q_suc_pr = f"SELECT nombre_sucursal, sum(saldo_capital_total_c2)/NULLIF(sum(capital_c2), 0) as 'Ratio C2' FROM '{FILE_PATH}' WHERE uen='PR' GROUP BY 1 ORDER BY 2 DESC LIMIT 10"
             q_suc_sol = f"SELECT nombre_sucursal, sum(saldo_capital_total_890_c1)/NULLIF(sum(capital_c1), 0) as 'Ratio C1' FROM '{FILE_PATH}' WHERE uen='SOLIDAR' GROUP BY 1 ORDER BY 2 DESC LIMIT 10"
             
@@ -120,9 +118,9 @@ try:
                 st.table(duckdb.query(q_suc_sol).df().set_index('nombre_sucursal').style.format("{:.2%}"))
 
     else:
-        st.error(f"No se encuentra el archivo '{FILE_PATH}'. Verifica que esté en la raíz de tu GitHub.")
+        st.error(f"No se encuentra el archivo '{FILE_PATH}' en el repositorio.")
 
 except Exception as e:
     st.error(f"Error técnico detectado: {e}")
 
-st.caption("Procesamiento Analítico vía DuckDB | Desarrollado para Michel Ovalle")
+st.caption("Procesamiento Analítico vía DuckDB Engine | Usuario: Michel Ovalle")
