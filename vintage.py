@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 import plotly.express as px
 import os
 
-# 1. Configuración de la página (DEBE SER LO PRIMERO)
+# 1. Configuración de la página
 st.set_page_config(page_title="Análisis Vintage Pro", layout="wide")
 
 # CSS para limpieza visual
@@ -26,7 +26,6 @@ def load_data():
         return pd.DataFrame()
     
     try:
-        # Usamos engine pyarrow para optimizar memoria en Streamlit Cloud
         df = pd.read_parquet(file_path, engine='pyarrow')
         if 'mes_apertura' in df.columns:
             df['mes_apertura'] = pd.to_datetime(df['mes_apertura'])
@@ -38,7 +37,6 @@ def load_data():
 def calcular_matriz_datos(df, fecha_max, prefijo_num, prefijo_den):
     if df.empty: return None, None, None
     
-    # Capital total por cosecha
     df_capital_total = df.groupby('mes_apertura_str')['capital_c1'].sum()
     df_capital_total.name = "Capital Total"
 
@@ -67,7 +65,9 @@ def calcular_matriz_datos(df, fecha_max, prefijo_num, prefijo_den):
     
     matriz_ratios_grafico = pd.concat(results_graf, axis=1).sort_index(ascending=True)
     matriz_ratios_tabla = pd.concat(results_tabla, axis=1).sort_index(ascending=True)
-    cols_ordenadas = sorted(matriz_ratios_tabla.columns, reverse=True)
+    
+    # Ordenar columnas (Fechas) asegurando que no haya tipos None
+    cols_ordenadas = sorted([str(c) for c in matriz_ratios_tabla.columns], reverse=True)
     matriz_ratios_tabla = matriz_ratios_tabla.reindex(columns=cols_ordenadas)
     
     return matriz_ratios_tabla, df_capital_total, matriz_ratios_grafico
@@ -130,10 +130,15 @@ try:
     df_raw = load_data()
     
     if not df_raw.empty:
-        # --- SIDEBAR FILTROS ---
+        # --- SIDEBAR FILTROS (CORRECCIÓN AQUÍ) ---
         st.sidebar.header("Filtros Globales")
-        f_sucursal = st.sidebar.multiselect("Sucursal", sorted(df_raw['nombre_sucursal'].unique()))
-        f_producto = st.sidebar.multiselect("Producto Agrupado", sorted(df_raw['producto_agrupado'].unique()))
+        
+        # Limpiamos nulos antes de ordenar para evitar el error de NoneType
+        opciones_sucursal = sorted([str(x) for x in df_raw['nombre_sucursal'].unique() if pd.notna(x)])
+        f_sucursal = st.sidebar.multiselect("Sucursal", opciones_sucursal)
+        
+        opciones_producto = sorted([str(x) for x in df_raw['producto_agrupado'].unique() if pd.notna(x)])
+        f_producto = st.sidebar.multiselect("Producto Agrupado", opciones_producto)
 
         df_base = df_raw.copy()
         if f_sucursal: df_base = df_base[df_base['nombre_sucursal'].isin(f_sucursal)]
@@ -156,14 +161,12 @@ try:
 
         with tab1:
             st.title("Análisis Vintage (24 meses)")
-            # UEN: PR
             m_tabla_pr, m_cap_pr, m_graf_pr = calcular_matriz_datos(df_pr, fecha_max, 'saldo_capital_total_c', 'capital_c')
             if m_tabla_pr is not None:
                 st.subheader("📊 Vintage 30 - 150 (UEN: PR)")
                 st.dataframe(renderizar_estilo(m_tabla_pr, m_cap_pr), use_container_width=True)
             
             st.divider()
-            # UEN: SOLIDAR
             m_tabla_sol, m_cap_sol, m_graf_sol = calcular_matriz_datos(df_solidar, fecha_max, 'saldo_capital_total_890_c', 'capital_c')
             if m_tabla_sol is not None:
                 st.subheader("📊 Vintage 8 - 90 (UEN: SOLIDAR)")
@@ -171,7 +174,6 @@ try:
 
         with tab2:
             st.title("Análisis de Maduración y Comportamiento")
-            # Curvas de maduración
             if m_graf_pr is not None:
                 matriz_12m = m_graf_pr.tail(12)
                 fig_lines = go.Figure()
@@ -191,7 +193,6 @@ try:
                 fig_c2_sol = crear_grafico_linea_c2(df_solidar, 'saldo_capital_total_890_c', 'capital_c', "Ratio C2 Global - SOLIDAR", "#d62728")
                 if fig_c2_sol: st.plotly_chart(fig_c2_sol, use_container_width=True)
 
-            # TOP 5 PRODUCTOS
             st.divider()
             st.subheader("🏆 Top 5 Productos con Mayor Índice de Riesgo")
             t_pr, t_sol = st.columns(2)
@@ -209,11 +210,13 @@ try:
         with tab3:
             st.title("📍 Análisis Sucursales y productos")
             fecha_penultima = fecha_max - pd.DateOffset(months=1)
-            res_pr = generar_resumen(df_24_global[df_24_global['uen']=='PR'], fecha_penultima, 'saldo_capital_total_c2', 'capital_c2', "PR", "C2")
-            res_sol = generar_resumen(df_24_global[df_24_global['uen']=='SOLIDAR'], fecha_max, 'saldo_capital_total_890_c1', 'capital_c1', "SOLIDAR", "C1")
+            df_g_pr = df_24_global[df_24_global['uen']=='PR']
+            df_g_sol = df_24_global[df_24_global['uen']=='SOLIDAR']
+            res_pr = generar_resumen(df_g_pr, fecha_penultima, 'saldo_capital_total_c2', 'capital_c2', "PR", "C2")
+            res_sol = generar_resumen(df_g_sol, fecha_max, 'saldo_capital_total_890_c1', 'capital_c1', "SOLIDAR", "C1")
             st.info(res_pr + "\n\n---\n\n" + res_sol)
 
         st.caption(f"Datos hasta {fecha_max.strftime('%Y-%m')}. Usuario: Michel Ovalle.")
 
 except Exception as e:
-    st.error(f"Error técnico: {e}")
+    st.error(f"Error técnico detectado: {e}")
