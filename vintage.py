@@ -8,7 +8,7 @@ import plotly.express as px
 # 1. Configuración de la página
 st.set_page_config(page_title="Análisis Vintage Pro", layout="wide")
 
-# CSS para asegurar limpieza visual y texto negro
+# CSS para limpieza visual
 st.markdown("""
     <style>
     .main { background-color: #FFFFFF; }
@@ -19,6 +19,7 @@ st.markdown("""
 
 @st.cache_data
 def load_data():
+    # Asegúrate de que el archivo vintage_acum.parquet esté en la misma carpeta
     df = pd.read_parquet("vintage_acum.parquet")
     if 'mes_apertura' in df.columns:
         df['mes_apertura'] = pd.to_datetime(df['mes_apertura'])
@@ -132,8 +133,8 @@ def generar_resumen(df_uen, fecha_target, pref_num, pref_den, uen_name, cohorte_
 try:
     df_raw = load_data()
     
-    # --- SIDEBAR FILTROS (Afectan Tab 1 y Tab 2) ---
-    st.sidebar.header("Filtros Globales (Tabs 1 y 2)")
+    # --- SIDEBAR FILTROS ---
+    st.sidebar.header("Filtros Globales")
     def crear_filtro(label, col_name):
         options = sorted(df_raw[col_name].dropna().unique())
         return st.sidebar.multiselect(label, options)
@@ -228,6 +229,33 @@ try:
                 fig_peores_sol = px.line(df_trend_peores_sol, x='Cosecha', y='Ratio C1', color='Producto', title="Histórico C1 - SOLIDAR", markers=True)
                 fig_peores_sol.update_layout(plot_bgcolor='white', yaxis_tickformat='.1%', xaxis={'type': 'category'})
                 st.plotly_chart(fig_peores_sol, use_container_width=True)
+
+        # --- SECCIÓN TOP 5 PRODUCTOS POR RIESGO ---
+        st.divider()
+        st.subheader("🏆 Top 5 Productos con Mayor Índice de Riesgo (Acumulado)")
+        col_top_pr, col_top_sol = st.columns(2)
+
+        with col_top_pr:
+            st.markdown("#### UEN: PR (Ratio C2)")
+            if not df_pr.empty:
+                top5_pr = df_pr.groupby('producto_agrupado').apply(
+                    lambda x: x['saldo_capital_total_c2'].sum() / x['capital_c2'].sum() if x['capital_c2'].sum() > 0 else 0
+                ).sort_values(ascending=False).head(5).reset_index()
+                top5_pr.columns = ['Producto', 'Ratio C2']
+                fig_top_pr = px.bar(top5_pr, x='Ratio C2', y='Producto', orientation='h', color='Ratio C2', color_continuous_scale='Reds')
+                fig_top_pr.update_layout(yaxis={'categoryorder':'total ascending'}, plot_bgcolor='white', xaxis_tickformat='.1%')
+                st.plotly_chart(fig_top_pr, use_container_width=True)
+
+        with col_top_sol:
+            st.markdown("#### UEN: SOLIDAR (Ratio C1)")
+            if not df_solidar.empty:
+                top5_sol = df_solidar.groupby('producto_agrupado').apply(
+                    lambda x: x['saldo_capital_total_890_c1'].sum() / x['capital_c1'].sum() if x['capital_c1'].sum() > 0 else 0
+                ).sort_values(ascending=False).head(5).reset_index()
+                top5_sol.columns = ['Producto', 'Ratio C1']
+                fig_top_sol = px.bar(top5_sol, x='Ratio C1', y='Producto', orientation='h', color='Ratio C1', color_continuous_scale='Reds')
+                fig_top_sol.update_layout(yaxis={'categoryorder':'total ascending'}, plot_bgcolor='white', xaxis_tickformat='.1%')
+                st.plotly_chart(fig_top_sol, use_container_width=True)
 
     with tab3:
         df_pr_tab3 = df_24_global[df_24_global['uen'] == 'PR']
