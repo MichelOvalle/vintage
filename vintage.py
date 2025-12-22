@@ -8,12 +8,11 @@ import plotly.express as px
 # 1. Configuración de la página
 st.set_page_config(page_title="Análisis Vintage Pro", layout="wide")
 
-# CSS para forzar visualización clara y evitar fondos oscuros en tablas
+# CSS para asegurar que el fondo de la app sea blanco y el texto de las tablas sea negro
 st.markdown("""
     <style>
     .main { background-color: #FFFFFF; }
     .stDataFrame { background-color: #FFFFFF; }
-    /* Forzar texto negro en tablas legacy */
     [data-testid="stTable"] td, [data-testid="stTable"] th { color: black !important; }
     </style>
     """, unsafe_allow_html=True)
@@ -222,7 +221,7 @@ try:
 
         st.divider()
 
-        # --- SECCIÓN: MATRICES CRUZADAS CON ESTILO CORREGIDO ---
+        # --- SECCIÓN: MATRICES CRUZADAS (ARREGLADAS) ---
         st.markdown("### 🔲 Matrices Cruzadas: Sucursal vs Producto")
         col_m1, col_m2 = st.columns(2)
 
@@ -233,11 +232,11 @@ try:
                 pivot_pr = df_m_pr.pivot_table(index='nombre_sucursal', columns='producto_agrupado', 
                                              values=['saldo_capital_total_c2', 'capital_c2'], aggfunc='sum')
                 matriz_pr = pivot_pr['saldo_capital_total_c2'] / pivot_pr['capital_c2']
-                # .set_properties asegura texto negro y fondo blanco para evitar el "fondo negro"
+                # ELIMINADO 'background-color': 'white' para que se vea el Heatmap
                 st.dataframe(
                     matriz_pr.style.format("{:.2%}", na_rep="-")
                     .background_gradient(cmap='RdYlGn_r', axis=None)
-                    .set_properties(**{'color': 'black', 'background-color': 'white', 'border': '1px solid #eeeeee'}), 
+                    .set_properties(**{'color': 'black', 'border': '1px solid #eeeeee'}), 
                     use_container_width=True
                 )
 
@@ -251,7 +250,7 @@ try:
                 st.dataframe(
                     matriz_sol.style.format("{:.2%}", na_rep="-")
                     .background_gradient(cmap='RdYlGn_r', axis=None)
-                    .set_properties(**{'color': 'black', 'background-color': 'white', 'border': '1px solid #eeeeee'}), 
+                    .set_properties(**{'color': 'black', 'border': '1px solid #eeeeee'}), 
                     use_container_width=True
                 )
 
@@ -280,7 +279,7 @@ try:
                 df_suc_sol.columns = ['Sucursal', 'Ratio C1']
                 st.dataframe(df_suc_sol.sort_values(by='Ratio C1', ascending=False).style.format({'Ratio C1': '{:.2%}'}).background_gradient(cmap='RdYlGn_r').set_properties(**{'color': 'black'}), use_container_width=True)
 
-    st.caption(f"Referencia: Datos procesados hasta {fecha_max.strftime('%Y-%m')}. Usuario: Michel Ovalle.")
+    st.caption(f"Referencia: Datos procesados hasta {fecha_max.strftime('%Y-%m')}. Thought Partner: Gemini.")
 
 except Exception as e:
     st.error(f"Error técnico detectado: {e}")
