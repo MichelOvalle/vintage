@@ -8,7 +8,7 @@ import plotly.express as px
 # 1. Configuración de la página
 st.set_page_config(page_title="Análisis Vintage Pro", layout="wide")
 
-# CSS para asegurar que el fondo de la app sea blanco y el texto de las tablas sea negro
+# CSS para forzar limpieza visual
 st.markdown("""
     <style>
     .main { background-color: #FFFFFF; }
@@ -76,7 +76,7 @@ def renderizar_estilo(matriz_ratios, df_capital_total):
         matriz_con_stats.style
         .format(formatos, na_rep="") 
         .background_gradient(cmap='RdYlGn_r', axis=None, subset=idx[matriz_ratios.index, matriz_ratios.columns]) 
-        .highlight_null(color='white')
+        .highlight_null(color='white') # Limpia las celdas vacías
         .set_properties(**{'color': 'black', 'border': '1px solid #D3D3D3'})
         .set_properties(subset=idx[['Promedio', 'Máximo', 'Mínimo'], :], **{'font-weight': 'bold'})
         .set_properties(subset=idx[:, 'Capital Total'], **{'font-weight': 'bold', 'background-color': '#f0f2f6'})
@@ -132,7 +132,7 @@ def generar_resumen(df_uen, fecha_target, pref_num, pref_den, uen_name, cohorte_
 try:
     df_raw = load_data()
     
-    # --- SIDEBAR FILTROS ---
+    # --- SIDEBAR ---
     st.sidebar.header("Filtros Globales")
     def crear_filtro(label, col_name):
         options = sorted(df_raw[col_name].dropna().unique())
@@ -221,7 +221,7 @@ try:
 
         st.divider()
 
-        # --- SECCIÓN: MATRICES CRUZADAS (ARREGLADAS) ---
+        # --- SECCIÓN: MATRICES CRUZADAS (FIXED) ---
         st.markdown("### 🔲 Matrices Cruzadas: Sucursal vs Producto")
         col_m1, col_m2 = st.columns(2)
 
@@ -232,10 +232,11 @@ try:
                 pivot_pr = df_m_pr.pivot_table(index='nombre_sucursal', columns='producto_agrupado', 
                                              values=['saldo_capital_total_c2', 'capital_c2'], aggfunc='sum')
                 matriz_pr = pivot_pr['saldo_capital_total_c2'] / pivot_pr['capital_c2']
-                # ELIMINADO 'background-color': 'white' para que se vea el Heatmap
+                
                 st.dataframe(
                     matriz_pr.style.format("{:.2%}", na_rep="-")
                     .background_gradient(cmap='RdYlGn_r', axis=None)
+                    .highlight_null(color='white') # <--- ESTO ELIMINA LOS CUADROS NEGROS
                     .set_properties(**{'color': 'black', 'border': '1px solid #eeeeee'}), 
                     use_container_width=True
                 )
@@ -247,37 +248,38 @@ try:
                 pivot_sol = df_m_sol.pivot_table(index='nombre_sucursal', columns='producto_agrupado', 
                                                values=['saldo_capital_total_890_c1', 'capital_c1'], aggfunc='sum')
                 matriz_sol = pivot_sol['saldo_capital_total_890_c1'] / pivot_sol['capital_c1']
+                
                 st.dataframe(
                     matriz_sol.style.format("{:.2%}", na_rep="-")
                     .background_gradient(cmap='RdYlGn_r', axis=None)
+                    .highlight_null(color='white') # <--- ESTO ELIMINA LOS CUADROS NEGROS
                     .set_properties(**{'color': 'black', 'border': '1px solid #eeeeee'}), 
                     use_container_width=True
                 )
 
         st.divider()
-        
         st.markdown("### 🏢 Desempeño Individual")
-        col_pr, col_sol = st.columns(2)
+        col_ind_1, col_ind_2 = st.columns(2)
         
-        with col_pr:
+        with col_ind_1:
             st.subheader(f"Sucursales PR (C2)")
             if not df_pr.empty:
-                df_filtro_pr = df_pr[df_pr['mes_apertura'] == fecha_penultima]
-                df_suc_pr = df_filtro_pr.groupby('nombre_sucursal').apply(
+                df_fil_pr = df_pr[df_pr['mes_apertura'] == fecha_penultima]
+                df_s_pr = df_fil_pr.groupby('nombre_sucursal').apply(
                     lambda x: x['saldo_capital_total_c2'].sum() / x['capital_c2'].sum() if x['capital_c2'].sum() > 0 else np.nan
                 ).reset_index()
-                df_suc_pr.columns = ['Sucursal', 'Ratio C2']
-                st.dataframe(df_suc_pr.sort_values(by='Ratio C2', ascending=False).style.format({'Ratio C2': '{:.2%}'}).background_gradient(cmap='RdYlGn_r').set_properties(**{'color': 'black'}), use_container_width=True)
+                df_s_pr.columns = ['Sucursal', 'Ratio C2']
+                st.dataframe(df_s_pr.sort_values(by='Ratio C2', ascending=False).style.format({'Ratio C2': '{:.2%}'}).background_gradient(cmap='RdYlGn_r').highlight_null(color='white').set_properties(**{'color': 'black'}), use_container_width=True)
 
-        with col_sol:
+        with col_ind_2:
             st.subheader(f"Sucursales SOLIDAR (C1)")
             if not df_solidar.empty:
-                df_filtro_sol = df_solidar[df_solidar['mes_apertura'] == fecha_max]
-                df_suc_sol = df_filtro_sol.groupby('nombre_sucursal').apply(
+                df_fil_sol = df_solidar[df_solidar['mes_apertura'] == fecha_max]
+                df_s_sol = df_fil_sol.groupby('nombre_sucursal').apply(
                     lambda x: x['saldo_capital_total_890_c1'].sum() / x['capital_c1'].sum() if x['capital_c1'].sum() > 0 else np.nan
                 ).reset_index()
-                df_suc_sol.columns = ['Sucursal', 'Ratio C1']
-                st.dataframe(df_suc_sol.sort_values(by='Ratio C1', ascending=False).style.format({'Ratio C1': '{:.2%}'}).background_gradient(cmap='RdYlGn_r').set_properties(**{'color': 'black'}), use_container_width=True)
+                df_s_sol.columns = ['Sucursal', 'Ratio C1']
+                st.dataframe(df_s_sol.sort_values(by='Ratio C1', ascending=False).style.format({'Ratio C1': '{:.2%}'}).background_gradient(cmap='RdYlGn_r').highlight_null(color='white').set_properties(**{'color': 'black'}), use_container_width=True)
 
     st.caption(f"Referencia: Datos procesados hasta {fecha_max.strftime('%Y-%m')}. Thought Partner: Gemini.")
 
