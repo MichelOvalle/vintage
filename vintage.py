@@ -165,18 +165,14 @@ try:
 
         st.divider()
         
-        # --- NUEVA SECCIÓN: PEORES 4 PRODUCTOS PR (C2) ---
         st.subheader("⚠️ Top 4 Productos con Mayor Mora (C2) - UEN: PR")
         if not df_pr.empty:
-            # Calcular ratio C2 por producto para identificar los 4 peores
             peores_prod = df_pr.groupby('producto_agrupado').apply(
-                lambda x: x['saldo_capital_total_c2'].sum() / x['capital_c2'].sum() if x['capital_c2'].sum() > 0 else 0
+                lambda x: (x.groupby('mes_apertura_str').apply(lambda m: m['saldo_capital_total_c2'].sum() / m['capital_c2'].sum() if m['capital_c2'].sum() > 0 else np.nan)).mean()
             ).sort_values(ascending=False).head(4).index.tolist()
 
-            # Filtrar datos solo para esos productos
             df_peores = df_pr[df_pr['producto_agrupado'].isin(peores_prod)]
             
-            # Calcular tendencia mensual para el gráfico
             df_trend_peores = df_peores.groupby(['mes_apertura_str', 'producto_agrupado']).apply(
                 lambda x: x['saldo_capital_total_c2'].sum() / x['capital_c2'].sum() if x['capital_c2'].sum() > 0 else np.nan
             ).reset_index()
@@ -185,24 +181,20 @@ try:
             fig_peores = px.line(df_trend_peores, x='Cosecha', y='Ratio C2', color='Producto', 
                                  title="Evolución C2 - Los 4 productos más críticos", markers=True)
             fig_peores.update_layout(plot_bgcolor='white', yaxis_tickformat='.1%', xaxis={'type': 'category'})
-            fig_peores.update_xaxes(showgrid=True, gridcolor='#f0f0f0', tickangle=-45)
-            fig_peores.update_yaxes(showgrid=True, gridcolor='#f0f0f0')
             st.plotly_chart(fig_peores, use_container_width=True)
-        else:
-            st.info("No hay datos disponibles para el análisis de productos críticos en PR.")
 
     with tab3:
         st.title("📍 Detalle Numérico: Sucursales y Productos")
         
-        # --- FILA 1: SUCURSALES ---
         st.markdown("### 🏢 Desempeño por Sucursal")
         col_pr, col_sol = st.columns(2)
         
         with col_pr:
             st.subheader("UEN: PR (Ratio C2)")
             if not df_pr.empty:
+                # CAMBIO: Ahora calcula el promedio de los meses para coincidir con el 1.6%
                 df_suc_pr = df_pr.groupby('nombre_sucursal').apply(
-                    lambda x: x['saldo_capital_total_c2'].sum() / x['capital_c2'].sum() if x['capital_c2'].sum() > 0 else np.nan
+                    lambda x: (x.groupby('mes_apertura_str').apply(lambda m: m['saldo_capital_total_c2'].sum() / m['capital_c2'].sum() if m['capital_c2'].sum() > 0 else np.nan)).mean()
                 ).reset_index()
                 df_suc_pr.columns = ['Sucursal', 'Ratio C2']
                 df_suc_pr = df_suc_pr.sort_values(by='Ratio C2', ascending=False).dropna()
@@ -212,7 +204,7 @@ try:
             st.subheader("UEN: SOLIDAR (Ratio C1)")
             if not df_solidar.empty:
                 df_suc_sol = df_solidar.groupby('nombre_sucursal').apply(
-                    lambda x: x['saldo_capital_total_890_c1'].sum() / x['capital_c1'].sum() if x['capital_c1'].sum() > 0 else np.nan
+                    lambda x: (x.groupby('mes_apertura_str').apply(lambda m: m['saldo_capital_total_890_c1'].sum() / m['capital_c1'].sum() if m['capital_c1'].sum() > 0 else np.nan)).mean()
                 ).reset_index()
                 df_suc_sol.columns = ['Sucursal', 'Ratio C1']
                 df_suc_sol = df_suc_sol.sort_values(by='Ratio C1', ascending=False).dropna()
@@ -220,15 +212,15 @@ try:
 
         st.divider()
 
-        # --- FILA 2: PRODUCTOS ---
         st.markdown("### 📦 Desempeño por Producto Agrupado")
         col_prod_pr, col_prod_sol = st.columns(2)
 
         with col_prod_pr:
             st.subheader("UEN: PR (Ratio C2)")
             if not df_pr.empty:
+                # CAMBIO: Promedio de ratios mensuales para el producto
                 df_p_pr = df_pr.groupby('producto_agrupado').apply(
-                    lambda x: x['saldo_capital_total_c2'].sum() / x['capital_c2'].sum() if x['capital_c2'].sum() > 0 else np.nan
+                    lambda x: (x.groupby('mes_apertura_str').apply(lambda m: m['saldo_capital_total_c2'].sum() / m['capital_c2'].sum() if m['capital_c2'].sum() > 0 else np.nan)).mean()
                 ).reset_index()
                 df_p_pr.columns = ['Producto', 'Ratio C2']
                 df_p_pr = df_p_pr.sort_values(by='Ratio C2', ascending=False).dropna()
@@ -238,7 +230,7 @@ try:
             st.subheader("UEN: SOLIDAR (Ratio C1)")
             if not df_solidar.empty:
                 df_p_sol = df_solidar.groupby('producto_agrupado').apply(
-                    lambda x: x['saldo_capital_total_890_c1'].sum() / x['capital_c1'].sum() if x['capital_c1'].sum() > 0 else np.nan
+                    lambda x: (x.groupby('mes_apertura_str').apply(lambda m: m['saldo_capital_total_890_c1'].sum() / m['capital_c1'].sum() if m['capital_c1'].sum() > 0 else np.nan)).mean()
                 ).reset_index()
                 df_p_sol.columns = ['Producto', 'Ratio C1']
                 df_p_sol = df_p_sol.sort_values(by='Ratio C1', ascending=False).dropna()
