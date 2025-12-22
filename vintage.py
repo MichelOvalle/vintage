@@ -165,16 +165,13 @@ try:
 
         st.divider()
         
-        # --- SECCIÓN RESTAURADA: PEORES 4 PRODUCTOS PR (C2) ---
         st.subheader("⚠️ Top 4 Productos con Mayor Mora (C2) - UEN: PR")
         if not df_pr.empty:
-            # Seleccionamos los peores 4 basados en el ratio acumulado de C2
             peores_prod = df_pr.groupby('producto_agrupado').apply(
                 lambda x: x['saldo_capital_total_c2'].sum() / x['capital_c2'].sum() if x['capital_c2'].sum() > 0 else 0
             ).sort_values(ascending=False).head(4).index.tolist()
 
             df_peores = df_pr[df_pr['producto_agrupado'].isin(peores_prod)]
-            
             df_trend_peores = df_peores.groupby(['mes_apertura_str', 'producto_agrupado']).apply(
                 lambda x: x['saldo_capital_total_c2'].sum() / x['capital_c2'].sum() if x['capital_c2'].sum() > 0 else np.nan
             ).reset_index()
@@ -186,11 +183,56 @@ try:
             st.plotly_chart(fig_peores, use_container_width=True)
 
     with tab3:
-        # Fechas para consistencia del 1.6%
         fecha_penultima = fecha_max - pd.DateOffset(months=1)
         
         st.title("📍 Detalle Numérico: Sucursales y Productos")
-        st.info(f"Nota: Los ratios C2 corresponden a la cosecha de **{fecha_penultima.strftime('%B %Y')}**.")
+        
+        # --- NUEVA SECCIÓN: ANÁLISIS DINÁMICO ---
+        st.subheader("📝 Resumen de Hallazgos")
+        
+        def generar_resumen(df_uen, fecha_target, pref_num, pref_den, uen_name):
+            df_mes = df_uen[df_uen['mes_apertura'] == fecha_target]
+            if df_mes.empty: return "Sin datos para el periodo analizado."
+            
+            # Cálculo Sucursales (Ignora 0)
+            suc_data = df_mes.groupby('nombre_sucursal').apply(
+                lambda x: x[pref_num].sum() / x[pref_den].sum() if x[pref_den].sum() > 0 else 0
+            )
+            suc_data = suc_data[suc_data > 0]
+            
+            if suc_data.empty: return f"Para uen:{uen_name}, no se encontraron ratios mayores a cero."
+            
+            suc_max, val_max = suc_data.idxmax(), suc_data.max()
+            suc_min, val_min = suc_data.idxmin(), suc_data.min()
+            
+            # Productos para Sucursal Max
+            prod_max_df = df_mes[df_mes['nombre_sucursal'] == suc_max].groupby('producto_agrupado').apply(
+                lambda x: x[pref_num].sum() / x[pref_den].sum() if x[pref_den].sum() > 0 else 0
+            )
+            prod_max_df = prod_max_df[prod_max_df > 0]
+            p_max_name, p_max_val = (prod_max_df.idxmax(), prod_max_df.max()) if not prod_max_df.empty else ("N/A", 0)
+            
+            # Productos para Sucursal Min
+            prod_min_df = df_mes[df_mes['nombre_sucursal'] == suc_min].groupby('producto_agrupado').apply(
+                lambda x: x[pref_num].sum() / x[pref_den].sum() if x[pref_den].sum() > 0 else 0
+            )
+            prod_min_df = prod_min_df[prod_min_df > 0]
+            p_min_name, p_min_val = (prod_min_df.idxmin(), prod_min_df.min()) if not prod_min_df.empty else ("N/A", 0)
+            
+            return (
+                f"**Para uen:{uen_name}** \n"
+                f"La sucursal **{suc_max}**, tiene el porcentaje más alto con **{val_max:.2%}**, siendo el producto_agrupado **{p_max_name}** el que más participación tiene, con un **{p_max_val:.2%}** para el cohorte C2.  \n"
+                f"La sucursal **{suc_min}**, tiene el porcentaje más bajo con **{val_min:.2%}**, siendo el producto_agrupado **{p_min_name}** el que menor participación tiene, con un **{p_min_val:.2%}** para el cohorte C2."
+            )
+
+        with st.expander("Ver Resumen Narrativo", expanded=True):
+            res_pr = generar_resumen(df_pr, fecha_penultima, 'saldo_capital_total_c2', 'capital_c2', "PR")
+            res_sol = generar_resumen(df_solidar, fecha_penultima, 'saldo_capital_total_890_c2', 'capital_c2', "SOLIDAR")
+            st.markdown(res_pr)
+            st.markdown("---")
+            st.markdown(res_sol)
+
+        st.divider()
         
         # --- FILA 1: SUCURSALES ---
         st.markdown("### 🏢 Desempeño por Sucursal")
