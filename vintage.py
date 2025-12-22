@@ -8,7 +8,7 @@ import plotly.express as px
 # 1. Configuración de la página
 st.set_page_config(page_title="Reporte Vintage Pro", layout="wide")
 
-# CSS para forzar fondo blanco y texto negro
+# CSS para fondo blanco y texto negro
 st.markdown("""
     <style>
     .main { background-color: #FFFFFF; }
@@ -26,7 +26,6 @@ def load_data():
 
 def calcular_matriz_datos(df, fecha_max, prefijo_num, prefijo_den):
     if df.empty: return None, None, None
-    
     df_capital_total = df.groupby('mes_apertura_str')['capital_c1'].sum()
     df_capital_total.name = "Capital Total"
 
@@ -142,7 +141,6 @@ try:
 
     with tab2:
         st.title("Análisis de Maduración y Comportamiento")
-
         if m_graf_pr is not None:
             matriz_12m = m_graf_pr.tail(12)
             fig_lines = go.Figure()
@@ -153,7 +151,6 @@ try:
             st.plotly_chart(fig_lines, use_container_width=True)
 
         st.divider()
-
         st.subheader("Tendencia de Cohorte C2")
         col1, col2 = st.columns(2)
         with col1:
@@ -164,55 +161,48 @@ try:
             if fig_c2_sol: st.plotly_chart(fig_c2_sol, use_container_width=True)
 
         st.divider()
-        
         st.subheader("⚠️ Top 4 Productos con Mayor Mora (C2) - UEN: PR")
         if not df_pr.empty:
             peores_prod = df_pr.groupby('producto_agrupado').apply(
                 lambda x: x['saldo_capital_total_c2'].sum() / x['capital_c2'].sum() if x['capital_c2'].sum() > 0 else 0
             ).sort_values(ascending=False).head(4).index.tolist()
-
             df_peores = df_pr[df_pr['producto_agrupado'].isin(peores_prod)]
             df_trend_peores = df_peores.groupby(['mes_apertura_str', 'producto_agrupado']).apply(
                 lambda x: x['saldo_capital_total_c2'].sum() / x['capital_c2'].sum() if x['capital_c2'].sum() > 0 else np.nan
             ).reset_index()
             df_trend_peores.columns = ['Cosecha', 'Producto', 'Ratio C2']
-
-            fig_peores = px.line(df_trend_peores, x='Cosecha', y='Ratio C2', color='Producto', 
-                                 title="Evolución Histórica C2 - Productos Críticos", markers=True)
+            fig_peores = px.line(df_trend_peores, x='Cosecha', y='Ratio C2', color='Producto', title="Evolución Histórica C2 - Productos Críticos", markers=True)
             fig_peores.update_layout(plot_bgcolor='white', yaxis_tickformat='.1%', xaxis={'type': 'category'})
             st.plotly_chart(fig_peores, use_container_width=True)
 
     with tab3:
         fecha_penultima = fecha_max - pd.DateOffset(months=1)
-        
         st.title("📍 Detalle Numérico: Sucursales y Productos")
         
-        # --- NUEVA SECCIÓN: ANÁLISIS DINÁMICO ---
+        # --- SECCIÓN: ANÁLISIS DINÁMICO ---
         st.subheader("📝 Resumen de Hallazgos")
         
-        def generar_resumen(df_uen, fecha_target, pref_num, pref_den, uen_name):
+        def generar_resumen(df_uen, fecha_target, pref_num, pref_den, uen_name, cohorte_label):
             df_mes = df_uen[df_uen['mes_apertura'] == fecha_target]
-            if df_mes.empty: return "Sin datos para el periodo analizado."
+            if df_mes.empty: return f"Sin datos para {uen_name} en {fecha_target.strftime('%Y-%m')}."
             
-            # Cálculo Sucursales (Ignora 0)
             suc_data = df_mes.groupby('nombre_sucursal').apply(
                 lambda x: x[pref_num].sum() / x[pref_den].sum() if x[pref_den].sum() > 0 else 0
             )
-            suc_data = suc_data[suc_data > 0]
-            
+            suc_data = suc_data[suc_data > 0] # Ignorar ceros
             if suc_data.empty: return f"Para uen:{uen_name}, no se encontraron ratios mayores a cero."
             
             suc_max, val_max = suc_data.idxmax(), suc_data.max()
             suc_min, val_min = suc_data.idxmin(), suc_data.min()
             
-            # Productos para Sucursal Max
+            # Detalle producto sucursal MAX
             prod_max_df = df_mes[df_mes['nombre_sucursal'] == suc_max].groupby('producto_agrupado').apply(
                 lambda x: x[pref_num].sum() / x[pref_den].sum() if x[pref_den].sum() > 0 else 0
             )
             prod_max_df = prod_max_df[prod_max_df > 0]
             p_max_name, p_max_val = (prod_max_df.idxmax(), prod_max_df.max()) if not prod_max_df.empty else ("N/A", 0)
             
-            # Productos para Sucursal Min
+            # Detalle producto sucursal MIN
             prod_min_df = df_mes[df_mes['nombre_sucursal'] == suc_min].groupby('producto_agrupado').apply(
                 lambda x: x[pref_num].sum() / x[pref_den].sum() if x[pref_den].sum() > 0 else 0
             )
@@ -221,13 +211,15 @@ try:
             
             return (
                 f"**Para uen:{uen_name}** \n"
-                f"La sucursal **{suc_max}**, tiene el porcentaje más alto con **{val_max:.2%}**, siendo el producto_agrupado **{p_max_name}** el que más participación tiene, con un **{p_max_val:.2%}** para el cohorte C2.  \n"
-                f"La sucursal **{suc_min}**, tiene el porcentaje más bajo con **{val_min:.2%}**, siendo el producto_agrupado **{p_min_name}** el que menor participación tiene, con un **{p_min_val:.2%}** para el cohorte C2."
+                f"La sucursal **{suc_max}**, tiene el porcentaje más alto con **{val_max:.2%}**, siendo el producto_agrupado **{p_max_name}** el que más participación tiene, con un **{p_max_val:.2%}** para el cohorte {cohorte_label}.  \n"
+                f"La sucursal **{suc_min}**, tiene el porcentaje más bajo con **{val_min:.2%}**, siendo el producto_agrupado **{p_min_name}** el que menor participación tiene, con un **{p_min_val:.2%}** para el cohorte {cohorte_label}."
             )
 
         with st.expander("Ver Resumen Narrativo", expanded=True):
-            res_pr = generar_resumen(df_pr, fecha_penultima, 'saldo_capital_total_c2', 'capital_c2', "PR")
-            res_sol = generar_resumen(df_solidar, fecha_penultima, 'saldo_capital_total_890_c2', 'capital_c2', "SOLIDAR")
+            # PR -> C2 (Fecha Penúltima)
+            res_pr = generar_resumen(df_pr, fecha_penultima, 'saldo_capital_total_c2', 'capital_c2', "PR", "C2")
+            # SOLIDAR -> C1 (Fecha Máxima)
+            res_sol = generar_resumen(df_solidar, fecha_max, 'saldo_capital_total_890_c1', 'capital_c1', "SOLIDAR", "C1")
             st.markdown(res_pr)
             st.markdown("---")
             st.markdown(res_sol)
@@ -239,7 +231,7 @@ try:
         col_pr, col_sol = st.columns(2)
         
         with col_pr:
-            st.subheader("UEN: PR (Ratio C2)")
+            st.subheader(f"UEN: PR (C2 - {fecha_penultima.strftime('%b %Y')})")
             if not df_pr.empty:
                 df_filtro_pr = df_pr[df_pr['mes_apertura'] == fecha_penultima]
                 df_suc_pr = df_filtro_pr.groupby('nombre_sucursal').apply(
@@ -250,7 +242,7 @@ try:
                 st.dataframe(df_suc_pr.style.format({'Ratio C2': '{:.2%}'}).background_gradient(cmap='RdYlGn_r', subset=['Ratio C2']), use_container_width=True)
 
         with col_sol:
-            st.subheader("UEN: SOLIDAR (Ratio C1)")
+            st.subheader(f"UEN: SOLIDAR (C1 - {fecha_max.strftime('%b %Y')})")
             if not df_solidar.empty:
                 df_filtro_sol = df_solidar[df_solidar['mes_apertura'] == fecha_max]
                 df_suc_sol = df_filtro_sol.groupby('nombre_sucursal').apply(
@@ -261,32 +253,31 @@ try:
                 st.dataframe(df_suc_sol.style.format({'Ratio C1': '{:.2%}'}).background_gradient(cmap='RdYlGn_r', subset=['Ratio C1']), use_container_width=True)
 
         st.divider()
-
         # --- FILA 2: PRODUCTOS ---
         st.markdown("### 📦 Desempeño por Producto Agrupado")
-        col_prod_pr, col_prod_sol = st.columns(2)
+        col_p_pr, col_p_sol = st.columns(2)
 
-        with col_prod_pr:
-            st.subheader("UEN: PR (Ratio C2)")
+        with col_p_pr:
+            st.subheader(f"UEN: PR (C2 - {fecha_penultima.strftime('%b %Y')})")
             if not df_pr.empty:
                 df_filtro_p_pr = df_pr[df_pr['mes_apertura'] == fecha_penultima]
-                df_p_pr = df_filtro_p_pr.groupby('producto_agrupado').apply(
+                df_prod_pr = df_filtro_p_pr.groupby('producto_agrupado').apply(
                     lambda x: x['saldo_capital_total_c2'].sum() / x['capital_c2'].sum() if x['capital_c2'].sum() > 0 else np.nan
                 ).reset_index()
-                df_p_pr.columns = ['Producto', 'Ratio C2']
-                df_p_pr = df_p_pr.sort_values(by='Ratio C2', ascending=False).dropna()
-                st.dataframe(df_p_pr.style.format({'Ratio C2': '{:.2%}'}).background_gradient(cmap='RdYlGn_r', subset=['Ratio C2']), use_container_width=True)
+                df_prod_pr.columns = ['Producto', 'Ratio C2']
+                df_prod_pr = df_prod_pr.sort_values(by='Ratio C2', ascending=False).dropna()
+                st.dataframe(df_prod_pr.style.format({'Ratio C2': '{:.2%}'}).background_gradient(cmap='RdYlGn_r', subset=['Ratio C2']), use_container_width=True)
 
-        with col_prod_sol:
-            st.subheader("UEN: SOLIDAR (Ratio C1)")
+        with col_p_sol:
+            st.subheader(f"UEN: SOLIDAR (C1 - {fecha_max.strftime('%b %Y')})")
             if not df_solidar.empty:
                 df_filtro_p_sol = df_solidar[df_solidar['mes_apertura'] == fecha_max]
-                df_p_sol = df_filtro_p_sol.groupby('producto_agrupado').apply(
+                df_prod_sol = df_filtro_p_sol.groupby('producto_agrupado').apply(
                     lambda x: x['saldo_capital_total_890_c1'].sum() / x['capital_c1'].sum() if x['capital_c1'].sum() > 0 else np.nan
                 ).reset_index()
-                df_p_sol.columns = ['Producto', 'Ratio C1']
-                df_p_sol = df_p_sol.sort_values(by='Ratio C1', ascending=False).dropna()
-                st.dataframe(df_p_sol.style.format({'Ratio C1': '{:.2%}'}).background_gradient(cmap='RdYlGn_r', subset=['Ratio C1']), use_container_width=True)
+                df_prod_sol.columns = ['Producto', 'Ratio C1']
+                df_prod_sol = df_prod_sol.sort_values(by='Ratio C1', ascending=False).dropna()
+                st.dataframe(df_prod_sol.style.format({'Ratio C1': '{:.2%}'}).background_gradient(cmap='RdYlGn_r', subset=['Ratio C1']), use_container_width=True)
 
     st.caption(f"Referencia: Datos actualizados hasta {fecha_max.strftime('%Y-%m')}.")
 
