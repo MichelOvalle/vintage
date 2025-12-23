@@ -18,7 +18,6 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 FILE_PATH = "vintage_acum.parquet"
-# Normalización de fecha para DuckDB
 COL_FECHA = "CAST(mes_apertura || '-01' AS DATE)"
 
 @st.cache_data
@@ -46,7 +45,7 @@ def get_vintage_matrix(pref_num, pref_den, uen, filters):
     query = f"SELECT {cols} FROM '{FILE_PATH}' {where} GROUP BY 1 ORDER BY 1"
     return duckdb.query(query).df().set_index('Cosecha')
 
-# --- INICIO DASHBOARD ---
+# --- LÓGICA DE DASHBOARD ---
 try:
     if os.path.exists(FILE_PATH):
         # --- SIDEBAR: FILTROS ---
@@ -119,43 +118,52 @@ try:
             
             # --- RESUMEN NARRATIVO ---
             st.subheader("📝 Resumen de Hallazgos")
+            c_res1, c_res2 = st.columns(2)
             
-            # Lógica para PR
-            q_suc_pr = f"SELECT nombre_sucursal, sum(saldo_capital_total_c2)/NULLIF(sum(capital_c2), 0) as Ratio FROM '{FILE_PATH}' WHERE uen='PR' GROUP BY 1 ORDER BY 2 DESC LIMIT 1"
-            res_suc_pr = duckdb.query(q_suc_pr).df()
-            if not res_suc_pr.empty:
-                s_name, s_ratio = res_suc_pr.iloc[0]['nombre_sucursal'], res_suc_pr.iloc[0]['Ratio']
-                q_prod_pr = f"SELECT producto_agrupado, sum(saldo_capital_total_c2)/NULLIF(sum(capital_c2), 0) as Ratio FROM '{FILE_PATH}' WHERE uen='PR' AND nombre_sucursal = '{s_name}' GROUP BY 1 ORDER BY 2 DESC LIMIT 1"
-                p_name, p_ratio = duckdb.query(q_prod_pr).df().iloc[0]['producto_agrupado'], duckdb.query(q_prod_pr).df().iloc[0]['Ratio']
-                st.markdown(f"**Para la uen:PR**")
-                st.write(f"La sucursal **{s_name}**, tiene el porcentaje más alto con **{s_ratio:.2%}**, siendo el producto_agrupado **{p_name}** el que más participación tiene, con un **{p_ratio:.2%}** para el cohorte C2.")
+            with c_res1:
+                q_suc_pr = f"SELECT nombre_sucursal, sum(saldo_capital_total_c2)/NULLIF(sum(capital_c2), 0) as Ratio FROM '{FILE_PATH}' WHERE uen='PR' GROUP BY 1 ORDER BY 2 DESC LIMIT 1"
+                res_suc_pr = duckdb.query(q_suc_pr).df()
+                if not res_suc_pr.empty:
+                    s_name, s_ratio = res_suc_pr.iloc[0]['nombre_sucursal'], res_suc_pr.iloc[0]['Ratio']
+                    q_prod_pr = f"SELECT producto_agrupado, sum(saldo_capital_total_c2)/NULLIF(sum(capital_c2), 0) as Ratio FROM '{FILE_PATH}' WHERE uen='PR' AND nombre_sucursal = '{s_name}' GROUP BY 1 ORDER BY 2 DESC LIMIT 1"
+                    p_name, p_ratio = duckdb.query(q_prod_pr).df().iloc[0]['producto_agrupado'], duckdb.query(q_prod_pr).df().iloc[0]['Ratio']
+                    st.markdown(f"**Para la uen:PR**")
+                    st.write(f"La sucursal **{s_name}**, tiene el porcentaje más alto con **{s_ratio:.2%}**, siendo el producto_agrupado **{p_name}** el que más participación tiene, con un **{p_ratio:.2%}** para el cohorte C2.")
 
-            st.write("---")
-
-            # Lógica para SOLIDAR
-            q_suc_sol = f"SELECT nombre_sucursal, sum(saldo_capital_total_890_c1)/NULLIF(sum(capital_c1), 0) as Ratio FROM '{FILE_PATH}' WHERE uen='SOLIDAR' GROUP BY 1 ORDER BY 2 DESC LIMIT 1"
-            res_suc_sol = duckdb.query(q_suc_sol).df()
-            if not res_suc_sol.empty:
-                s_name_s, s_ratio_s = res_suc_sol.iloc[0]['nombre_sucursal'], res_suc_sol.iloc[0]['Ratio']
-                q_prod_sol = f"SELECT producto_agrupado, sum(saldo_capital_total_890_c1)/NULLIF(sum(capital_c1), 0) as Ratio FROM '{FILE_PATH}' WHERE uen='SOLIDAR' AND nombre_sucursal = '{s_name_s}' GROUP BY 1 ORDER BY 2 DESC LIMIT 1"
-                p_name_s, p_ratio_s = duckdb.query(q_prod_sol).df().iloc[0]['producto_agrupado'], duckdb.query(q_prod_sol).df().iloc[0]['Ratio']
-                st.markdown(f"**Para la uen:SOLIDAR**")
-                st.write(f"La sucursal **{s_name_s}**, tiene el porcentaje más alto con **{s_ratio_s:.2%}**, siendo el producto_agrupado **{p_name_s}** el que más participación tiene, con un **{p_ratio_s:.2%}** para el cohorte C1.")
+            with c_res2:
+                q_suc_sol = f"SELECT nombre_sucursal, sum(saldo_capital_total_890_c1)/NULLIF(sum(capital_c1), 0) as Ratio FROM '{FILE_PATH}' WHERE uen='SOLIDAR' GROUP BY 1 ORDER BY 2 DESC LIMIT 1"
+                res_suc_sol = duckdb.query(q_suc_sol).df()
+                if not res_suc_sol.empty:
+                    s_name_s, s_ratio_s = res_suc_sol.iloc[0]['nombre_sucursal'], res_suc_sol.iloc[0]['Ratio']
+                    q_prod_sol = f"SELECT producto_agrupado, sum(saldo_capital_total_890_c1)/NULLIF(sum(capital_c1), 0) as Ratio FROM '{FILE_PATH}' WHERE uen='SOLIDAR' AND nombre_sucursal = '{s_name_s}' GROUP BY 1 ORDER BY 2 DESC LIMIT 1"
+                    p_name_s, p_ratio_s = duckdb.query(q_prod_sol).df().iloc[0]['producto_agrupado'], duckdb.query(q_prod_sol).df().iloc[0]['Ratio']
+                    st.markdown(f"**Para la uen:SOLIDAR**")
+                    st.write(f"La sucursal **{s_name_s}**, tiene el porcentaje más alto con **{s_ratio_s:.2%}**, siendo el producto_agrupado **{p_name_s}** el que más participación tiene, con un **{p_ratio_s:.2%}** para el cohorte C1.")
 
             st.divider()
-            # 2. MATRIZ SUCURSAL VS PRODUCTO
-            st.subheader("🔲 Matriz Sucursal vs Producto (C2 - PR)")
-            q_mx = f"SELECT COALESCE(nombre_sucursal, 'N/A') as Sucursal, COALESCE(producto_agrupado, 'N/A') as Producto, sum(saldo_capital_total_c2)/NULLIF(sum(capital_c2), 0) as Ratio FROM '{FILE_PATH}' WHERE uen='PR' GROUP BY 1, 2"
-            df_mx = duckdb.query(q_mx).df().pivot(index='Sucursal', columns='Producto', values='Ratio').fillna(0)
-            st.dataframe(df_mx.style.format("{:.2%}").background_gradient(cmap='RdYlGn_r', axis=None), use_container_width=True)
+            # --- MATRICES CRUZADAS ---
+            col_m1, col_m2 = st.columns(2)
+            
+            with col_m1:
+                st.subheader("🔲 Sucursal vs Producto (C2 - PR)")
+                q_mx_pr = f"SELECT COALESCE(nombre_sucursal, 'N/A') as Sucursal, COALESCE(producto_agrupado, 'N/A') as Producto, sum(saldo_capital_total_c2)/NULLIF(sum(capital_c2), 0) as Ratio FROM '{FILE_PATH}' WHERE uen='PR' GROUP BY 1, 2"
+                df_mx_pr = duckdb.query(q_mx_pr).df().pivot(index='Sucursal', columns='Producto', values='Ratio').fillna(0)
+                st.dataframe(df_mx_pr.style.format("{:.2%}").background_gradient(cmap='RdYlGn_r', axis=None), use_container_width=True)
+
+            with col_m2:
+                st.subheader("🔲 Sucursal vs Producto (C1 - SOLIDAR)")
+                q_mx_sol = f"SELECT COALESCE(nombre_sucursal, 'N/A') as Sucursal, COALESCE(producto_agrupado, 'N/A') as Producto, sum(saldo_capital_total_890_c1)/NULLIF(sum(capital_c1), 0) as Ratio FROM '{FILE_PATH}' WHERE uen='SOLIDAR' GROUP BY 1, 2"
+                df_mx_sol = duckdb.query(q_mx_sol).df().pivot(index='Sucursal', columns='Producto', values='Ratio').fillna(0)
+                st.dataframe(df_mx_sol.style.format("{:.2%}").background_gradient(cmap='RdYlGn_r', axis=None), use_container_width=True)
 
             # 3. RANKINGS
-            c_s1, c_s2 = st.columns(2)
-            with c_s1:
+            st.divider()
+            c_rank1, c_rank2 = st.columns(2)
+            with c_rank1:
                 st.markdown("#### Top 10 Sucursales Riesgo PR")
                 q_s_pr = f"SELECT COALESCE(nombre_sucursal, 'N/A') as Sucursal, sum(saldo_capital_total_c2)/NULLIF(sum(capital_c2), 0) as 'Ratio C2' FROM '{FILE_PATH}' WHERE uen='PR' GROUP BY 1 ORDER BY 2 DESC LIMIT 10"
                 st.table(duckdb.query(q_s_pr).df().fillna(0).set_index('Sucursal').style.format("{:.2%}"))
-            with c_s2:
+            with c_rank2:
                 st.markdown("#### Top 10 Sucursales Riesgo SOLIDAR")
                 q_s_sol = f"SELECT COALESCE(nombre_sucursal, 'N/A') as Sucursal, sum(saldo_capital_total_890_c1)/NULLIF(sum(capital_c1), 0) as 'Ratio C1' FROM '{FILE_PATH}' WHERE uen='SOLIDAR' GROUP BY 1 ORDER BY 2 DESC LIMIT 10"
                 st.table(duckdb.query(q_s_sol).df().fillna(0).set_index('Sucursal').style.format("{:.2%}"))
@@ -163,4 +171,4 @@ try:
 except Exception as e:
     st.error(f"Error técnico detectado: {e}")
 
-st.caption("Dashboard Vintage Pro v17.0 | Michel Ovalle | Engine: DuckDB")
+st.caption("Dashboard Vintage Pro v18.0 | Michel Ovalle | Engine: DuckDB")
