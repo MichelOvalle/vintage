@@ -9,7 +9,7 @@ import os
 # 1. Configuración de página
 st.set_page_config(page_title="Análisis Vintage Pro", layout="wide")
 
-# Estilos CSS para asegurar legibilidad y texto negro
+# Estilos CSS
 st.markdown("""
     <style>
     .main { background-color: #FFFFFF; }
@@ -84,22 +84,37 @@ try:
             st.title("Análisis de Maduración y Comportamiento")
             t_f = f"WHERE {COL_FECHA} >= (SELECT max({COL_FECHA}) - INTERVAL 24 MONTH FROM '{FILE_PATH}')"
             
-            # 1. Curvas de Maduración PR - AJUSTADO A 18 COSECHAS
+            # 1. Curvas de Maduración PR (18 meses)
             m_v_pr = get_vintage_matrix('saldo_capital_total_c', 'capital_c', 'PR', filtros)
             if not m_v_pr.empty:
                 df_c = m_v_pr.iloc[:-3] 
                 fig_m = go.Figure()
-                # Michel: Aquí configuramos los 18 meses que solicitaste
                 for cos in df_c.tail(18).index:
                     fila = df_c.loc[cos].drop('Cap_Inicial').dropna()
                     fig_m.add_trace(go.Scatter(x=fila.index, y=fila.values, mode='lines+markers', name=cos))
-                fig_m.update_layout(title="Maduración - PR (Últimas 18 Cosechas)", yaxis_tickformat='.1%', plot_bgcolor='white', xaxis_title="Meses de Maduración", yaxis_title="Ratio %")
+                
+                # --- CONFIGURACIÓN DE LEYENDA INFERIOR ---
+                fig_m.update_layout(
+                    title="Maduración - PR (Últimas 18 Cosechas)",
+                    yaxis_tickformat='.1%',
+                    plot_bgcolor='white',
+                    xaxis_title="Meses de Maduración",
+                    yaxis_title="Ratio %",
+                    legend=dict(
+                        orientation="h",       # Horizontal
+                        yanchor="top",
+                        y=-0.25,               # Posición debajo del eje X
+                        xanchor="center",
+                        x=0.5
+                    ),
+                    margin=dict(b=100)         # Espacio extra para que no se corte la leyenda
+                )
                 st.plotly_chart(fig_m, use_container_width=True)
             
             st.divider()
             st.subheader("Tendencias de Comportamiento Global (24 Meses)")
             
-            # 2. Evolución Global - PR (Vertical)
+            # 2. Evolución Global - PR
             q_p = f"SELECT strftime({COL_FECHA}, '%Y-%m') as Cosecha, sum(saldo_capital_total_c2)/NULLIF(sum(capital_c2),0) as Ratio FROM '{FILE_PATH}' {t_f} AND uen='PR' GROUP BY 1 ORDER BY 1"
             df_ev_pr = duckdb.query(q_p).df()
             fig_ev_pr = px.line(df_ev_pr, x='Cosecha', y='Ratio', title="Evolución C2 Global - PR", markers=True, labels={'Cosecha': 'Cosecha', 'Ratio': 'Ratio %'})
@@ -142,7 +157,7 @@ try:
 
         with tab3:
             st.title("📍 Detalle de Desempeño")
-            # Narrativas PR y SOLIDAR
+            # Resúmenes Narrativos
             for uen, col_r, col_c, coh in [('PR', 'saldo_capital_total_c2', 'capital_c2', 'C2'), ('SOLIDAR', 'saldo_capital_total_890_c1', 'capital_c1', 'C1')]:
                 q_sn = f"SELECT nombre_sucursal as n, sum({col_r})/NULLIF(sum({col_c}), 0) as r FROM '{FILE_PATH}' WHERE uen='{uen}' GROUP BY 1 ORDER BY 2 DESC LIMIT 1"
                 res_s = duckdb.query(q_sn).df()
@@ -185,4 +200,4 @@ try:
 except Exception as e:
     st.error(f"Error técnico detectado: {e}")
 
-st.caption("Dashboard Vintage Pro v35.0 | Michel Ovalle | Engine: DuckDB")
+st.caption("Dashboard Vintage Pro v36.0 | Michel Ovalle | Engine: DuckDB")
