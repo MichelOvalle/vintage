@@ -33,35 +33,38 @@ def build_in_clause(filter_list):
     return "('" + "', '".join(cleaned) + "')"
 
 def add_stats_to_df(df):
-    """Añade filas de estadísticas al final del DataFrame con los nuevos nombres de columna"""
+    """Añade estadísticas al final y coloca etiquetas en la columna 'Mes originacion'"""
     if df.empty: return df
     mes_cols = [c for c in df.columns if 'Mes' in c]
     df[mes_cols] = df[mes_cols].apply(pd.to_numeric, errors='coerce')
     
-    stats = pd.DataFrame(index=['Promedio', 'Máximo', 'Mínimo'], columns=df.columns)
-    for col in mes_cols:
-        stats.at['Promedio', col] = df[col].mean()
-        stats.at['Máximo', col] = df[col].max()
-        stats.at['Mínimo', col] = df[col].min()
+    # Creamos las 3 filas de estadísticas
+    stats = pd.DataFrame(index=[0, 1, 2], columns=df.columns)
+    stats['Mes originacion'] = ['Promedio', 'Máximo', 'Mínimo']
     
-    # Calculamos el promedio para la columna renombrada
-    stats.at['Promedio', 'Capital Inicial'] = df['Capital Inicial'].mean()
-    return pd.concat([df, stats])
+    for col in mes_cols:
+        stats.at[0, col] = df[col].mean()
+        stats.at[1, col] = df[col].max()
+        stats.at[2, col] = df[col].min()
+    
+    stats.at[0, 'Capital Inicial'] = df['Capital Inicial'].mean()
+    # Concatenamos y reseteamos el índice para que no aparezcan números laterales
+    return pd.concat([df, stats], ignore_index=True)
 
 def get_vintage_matrix(pref_num, pref_den, uen, filtros):
-    """Genera la matriz con los nombres: Mes originacion y Capital Inicial"""
+    """Genera la matriz. Mes originacion ya no es índice para que se vea el título"""
     where = f"WHERE uen = '{uen}' AND {COL_FECHA} >= (SELECT max({COL_FECHA}) - INTERVAL 24 MONTH FROM '{FILE_PATH}')"
     for key, col in [('suc', 'nombre_sucursal'), ('prod', 'producto_agrupado'), ('orig', 'PR_Origen_Limpio')]:
         clause = build_in_clause(filtros.get(key))
         if clause: where += f" AND {col} IN {clause}"
     
-    # SQL con las nuevas etiquetas solicitadas
     cols = f"strftime({COL_FECHA}, '%Y-%m') as 'Mes originacion', sum({pref_den}1) as 'Capital Inicial'"
     for i in range(1, 25):
         cols += f", sum({pref_num}{i}) / NULLIF(sum({pref_den}{i}), 0) as 'Mes {i}'"
     
-    df = duckdb.query(f"SELECT {cols} FROM '{FILE_PATH}' {where} GROUP BY 1 ORDER BY 1").df().set_index('Mes originacion')
-    return add_stats_to_df(df)
+    # IMPORTANTE: Ya no hacemos set_index aquí
+    df_raw = duckdb.query(f"SELECT {cols} FROM '{FILE_PATH}' {where} GROUP BY 1 ORDER BY 1").df()
+    return add_stats_to_df(df_raw)
 
 # --- DASHBOARD ---
 try:
@@ -83,13 +86,14 @@ try:
                 m_v = get_vintage_matrix(p_num, p_den, uen, filtros)
                 if not m_v.empty:
                     mes_cols = [c for c in m_v.columns if 'Mes' in c]
-                    # Formateo con Capital Inicial y texto negro
+                    # hide_index=True es la clave para que se vea limpio
                     st.dataframe(
                         m_v.style.format({"Capital Inicial": "${:,.0f}"} | {c: "{:.2%}" for c in mes_cols}, na_rep="")
                         .background_gradient(cmap='RdYlGn_r', axis=None, subset=(m_v.index[:-3], mes_cols))
                         .set_properties(**{'color': 'black'}, subset=mes_cols)
                         .highlight_null(color='white'), 
-                        use_container_width=True
+                        use_container_width=True,
+                        hide_index=True
                     )
                 st.divider()
 
@@ -102,8 +106,10 @@ try:
             if not m_v_pr.empty:
                 df_c = m_v_pr.iloc[:-3] 
                 fig_m = go.Figure()
-                for cos in df_c.tail(18).index:
-                    fila = df_c.loc[cos].drop('Capital Inicial').dropna()
+                # Ajuste de lógica de gráfica para nueva estructura de columnas
+                for i, row in df_c.tail(18).iterrows():
+                    cos = row['Mes originacion']
+                    fila = row.drop(['Mes originacion', 'Capital Inicial']).dropna()
                     fig_m.add_trace(go.Scatter(x=fila.index, y=fila.values, mode='lines+markers', name=cos))
                 
                 fig_m.update_layout(
@@ -115,12 +121,12 @@ try:
                 st.plotly_chart(fig_m, use_container_width=True)
             
             st.divider()
-            # Tendencias de Evolución Vertical
+            # Tendencias de Evolución
             for uen, col_r, col_c, tit_u, line_c in [('PR', 'saldo_capital_total_c2', 'capital_c2', 'PR', 'blue'), 
                                                      ('SOLIDAR', 'saldo_capital_total_890_c1', 'capital_c1', 'SOLIDAR', 'red')]:
                 q = f"SELECT strftime({COL_FECHA}, '%Y-%m') as Cosecha, sum({col_r})/NULLIF(sum({col_c}),0) as Ratio FROM '{FILE_PATH}' {t_f} AND uen='{uen}' GROUP BY 1 ORDER BY 1"
                 df_ev = duckdb.query(q).df()
-                fig_ev = px.line(df_ev, x='Cosecha', y='Ratio', title=f"Evolución Global - {tit_u}", markers=True, color_discrete_sequence=[line_c], labels={'Cosecha': 'Cosecha', 'Ratio': 'Ratio %'})
+                fig_ev = px.line(df_ev, x='Cosecha', y='Ratio', title=f"Evolución Global - {tit_u}", markers=True, color_discrete_sequence=[line_c])
                 fig_ev.update_xaxes(type='category', tickangle=-45)
                 fig_ev.update_layout(yaxis_tickformat='.2%', plot_bgcolor='white', margin=dict(l=60, r=40, b=80, t=60))
                 st.plotly_chart(fig_ev, use_container_width=True)
@@ -131,7 +137,7 @@ try:
                 if list_p:
                     qt = f"SELECT strftime({COL_FECHA}, '%Y-%m') as Cosecha, producto_agrupado as Producto, sum({col_r})/NULLIF(sum({col_c}),0) as Ratio FROM '{FILE_PATH}' WHERE uen='{uen}' AND Producto IN {build_in_clause(list_p)} AND {COL_FECHA} >= (SELECT max({COL_FECHA}) - INTERVAL 24 MONTH FROM '{FILE_PATH}') GROUP BY 1, 2 ORDER BY 1"
                     df_t = duckdb.query(qt).df()
-                    fig_t = px.line(df_t, x='Cosecha', y='Ratio', color='Producto', title=f"Top {len(list_p)} Críticos {tit_u}", markers=True, labels={'Cosecha': 'Cosecha', 'Ratio': 'Ratio %'})
+                    fig_t = px.line(df_t, x='Cosecha', y='Ratio', color='Producto', title=f"Top {len(list_p)} Críticos {tit_u}", markers=True)
                     fig_t.update_xaxes(type='category', tickangle=-45)
                     fig_t.update_layout(yaxis_tickformat='.2%', plot_bgcolor='white', margin=dict(b=80))
                     st.plotly_chart(fig_t, use_container_width=True)
@@ -151,7 +157,6 @@ try:
                     st.write(f"La sucursal **{sn}**, tiene el porcentaje más alto con **{sr:.2%}**, siendo el producto_agrupado **{pn}** el que más participación tiene, con un **{pr:.2%}** para el cohorte {coh}.")
             
             st.divider()
-            # Matrices Cruzadas (Sucursal vs Producto)
             c_mx1, c_mx2 = st.columns(2)
             for uen, col_r, col_c, col_obj in [('PR', 'saldo_capital_total_c2', 'capital_c2', c_mx1), ('SOLIDAR', 'saldo_capital_total_890_c1', 'capital_c1', c_mx2)]:
                 with col_obj:
@@ -182,4 +187,4 @@ try:
 except Exception as e:
     st.error(f"Error técnico detectado: {e}")
 
-st.caption("Dashboard Vintage | Michel Ovalle | Engine: DuckDB")
+st.caption("Dashboard Vintage Pro v44.0 | Michel Ovalle | Engine: DuckDB")
