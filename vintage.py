@@ -82,6 +82,7 @@ try:
 
         with tab2:
             st.title("Análisis de Maduración y Comportamiento")
+            # Filtro de fecha para tendencias (24 meses)
             t_f = f"WHERE {COL_FECHA} >= (SELECT max({COL_FECHA}) - INTERVAL 24 MONTH FROM '{FILE_PATH}')"
             
             # 1. Curvas de Maduración PR (18 meses)
@@ -93,21 +94,11 @@ try:
                     fila = df_c.loc[cos].drop('Cap_Inicial').dropna()
                     fig_m.add_trace(go.Scatter(x=fila.index, y=fila.values, mode='lines+markers', name=cos))
                 
-                # --- CONFIGURACIÓN DE LEYENDA INFERIOR ---
                 fig_m.update_layout(
                     title="Maduración - PR (Últimas 18 Cosechas)",
-                    yaxis_tickformat='.1%',
-                    plot_bgcolor='white',
-                    xaxis_title="Meses de Maduración",
-                    yaxis_title="Ratio %",
-                    legend=dict(
-                        orientation="h",       # Horizontal
-                        yanchor="top",
-                        y=-0.25,               # Posición debajo del eje X
-                        xanchor="center",
-                        x=0.5
-                    ),
-                    margin=dict(b=100)         # Espacio extra para que no se corte la leyenda
+                    yaxis_tickformat='.1%', plot_bgcolor='white', xaxis_title="Meses de Maduración", yaxis_title="Ratio %",
+                    legend=dict(orientation="h", yanchor="top", y=-0.25, xanchor="center", x=0.5),
+                    margin=dict(b=100)
                 )
                 st.plotly_chart(fig_m, use_container_width=True)
             
@@ -131,26 +122,25 @@ try:
             st.plotly_chart(fig_ev_sol, use_container_width=True)
 
             st.divider()
-            st.subheader("⚠️ Evolución de Productos Críticos (Top 4)")
             
-            # 4. Top 4 PR
-            qn = f"SELECT producto_agrupado FROM '{FILE_PATH}' WHERE uen='PR' GROUP BY 1 ORDER BY sum(saldo_capital_total_c2)/NULLIF(sum(capital_c2),0) DESC LIMIT 4"
-            ln = [str(r[0]) for r in duckdb.query(qn).fetchall()]
-            if ln:
-                qt = f"SELECT strftime({COL_FECHA}, '%Y-%m') as Cosecha, producto_agrupado as Producto, sum(saldo_capital_total_c2)/NULLIF(sum(capital_c2),0) as Ratio FROM '{FILE_PATH}' WHERE Producto IN {build_in_clause(ln)} AND {COL_FECHA} >= (SELECT max({COL_FECHA}) - INTERVAL 24 MONTH FROM '{FILE_PATH}') GROUP BY 1, 2 ORDER BY 1"
-                df_top_pr = duckdb.query(qt).df()
-                fig_top_pr = px.line(df_top_pr, x='Cosecha', y='Ratio', color='Producto', title="Top 4 Críticos PR", markers=True, labels={'Cosecha': 'Cosecha', 'Ratio': 'Ratio %', 'Producto': 'Producto'})
+            # 4. Top Productos PR
+            qn_pr = f"SELECT COALESCE(producto_agrupado, 'N/A') as P FROM '{FILE_PATH}' {t_f} AND uen='PR' GROUP BY 1 ORDER BY sum(saldo_capital_total_c2)/NULLIF(sum(capital_c2),0) DESC LIMIT 4"
+            list_pr = [str(r[0]) for r in duckdb.query(qn_pr).fetchall()]
+            if list_pr:
+                qt_pr = f"SELECT strftime({COL_FECHA}, '%Y-%m') as Cosecha, producto_agrupado as Producto, sum(saldo_capital_total_c2)/NULLIF(sum(capital_c2),0) as Ratio FROM '{FILE_PATH}' WHERE Producto IN {build_in_clause(list_pr)} AND {COL_FECHA} >= (SELECT max({COL_FECHA}) - INTERVAL 24 MONTH FROM '{FILE_PATH}') GROUP BY 1, 2 ORDER BY 1"
+                df_top_pr = duckdb.query(qt_pr).df()
+                fig_top_pr = px.line(df_top_pr, x='Cosecha', y='Ratio', color='Producto', title=f"Top {len(list_pr)} Críticos PR", markers=True, labels={'Cosecha': 'Cosecha', 'Ratio': 'Ratio %'})
                 fig_top_pr.update_xaxes(type='category', tickangle=-45)
                 fig_top_pr.update_layout(yaxis_tickformat='.2%', plot_bgcolor='white', margin=dict(b=80))
                 st.plotly_chart(fig_top_pr, use_container_width=True)
             
-            # 5. Top 4 SOLIDAR
-            qn_s = f"SELECT producto_agrupado FROM '{FILE_PATH}' WHERE uen='SOLIDAR' GROUP BY 1 ORDER BY sum(saldo_capital_total_890_c1)/NULLIF(sum(capital_c1),0) DESC LIMIT 4"
-            ln_s = [str(r[0]) for r in duckdb.query(qn_s).fetchall()]
-            if ln_s:
-                qt_s = f"SELECT strftime({COL_FECHA}, '%Y-%m') as Cosecha, producto_agrupado as Producto, sum(saldo_capital_total_890_c1)/NULLIF(sum(capital_c1),0) as Ratio FROM '{FILE_PATH}' WHERE Producto IN {build_in_clause(ln_s)} AND {COL_FECHA} >= (SELECT max({COL_FECHA}) - INTERVAL 24 MONTH FROM '{FILE_PATH}') GROUP BY 1, 2 ORDER BY 1"
-                df_top_sol = duckdb.query(qt_s).df()
-                fig_top_sol = px.line(df_top_sol, x='Cosecha', y='Ratio', color='Producto', title="Top 4 Críticos SOLIDAR", markers=True, labels={'Cosecha': 'Cosecha', 'Ratio': 'Ratio %', 'Producto': 'Producto'})
+            # 5. Top Productos SOLIDAR
+            qn_sol = f"SELECT COALESCE(producto_agrupado, 'N/A') as P FROM '{FILE_PATH}' {t_f} AND uen='SOLIDAR' GROUP BY 1 ORDER BY sum(saldo_capital_total_890_c1)/NULLIF(sum(capital_c1),0) DESC LIMIT 4"
+            list_sol = [str(r[0]) for r in duckdb.query(qn_sol).fetchall()]
+            if list_sol:
+                qt_sol = f"SELECT strftime({COL_FECHA}, '%Y-%m') as Cosecha, producto_agrupado as Producto, sum(saldo_capital_total_890_c1)/NULLIF(sum(capital_c1),0) as Ratio FROM '{FILE_PATH}' WHERE Producto IN {build_in_clause(list_sol)} AND {COL_FECHA} >= (SELECT max({COL_FECHA}) - INTERVAL 24 MONTH FROM '{FILE_PATH}') GROUP BY 1, 2 ORDER BY 1"
+                df_top_sol = duckdb.query(qt_sol).df()
+                fig_top_sol = px.line(df_top_sol, x='Cosecha', y='Ratio', color='Producto', title=f"Top {len(list_sol)} Críticos SOLIDAR", markers=True, labels={'Cosecha': 'Cosecha', 'Ratio': 'Ratio %'})
                 fig_top_sol.update_xaxes(type='category', tickangle=-45)
                 fig_top_sol.update_layout(yaxis_tickformat='.2%', plot_bgcolor='white', margin=dict(b=80))
                 st.plotly_chart(fig_top_sol, use_container_width=True)
@@ -200,4 +190,4 @@ try:
 except Exception as e:
     st.error(f"Error técnico detectado: {e}")
 
-st.caption("Dashboard Vintage Pro v36.0 | Michel Ovalle | Engine: DuckDB")
+st.caption("Dashboard Vintage Pro v37.0 | Michel Ovalle | Engine: DuckDB")
