@@ -9,7 +9,7 @@ import os
 # 1. Configuración de página
 st.set_page_config(page_title="Análisis Vintage Pro", layout="wide")
 
-# Estilos CSS para asegurar texto negro y celdas limpias
+# Estilos CSS para asegurar texto negro y limpieza
 st.markdown("""
     <style>
     .main { background-color: #FFFFFF; }
@@ -36,14 +36,17 @@ def add_stats_to_df(df):
     """Añade filas de Promedio, Máximo y Mínimo al final del DF"""
     if df.empty: return df
     mes_cols = [c for c in df.columns if 'Mes' in c]
+    # Aseguramos que los datos sean numéricos para calcular stats
+    df[mes_cols] = df[mes_cols].apply(pd.to_numeric, errors='coerce')
+    
     stats = pd.DataFrame(index=['Promedio', 'Máximo', 'Mínimo'], columns=df.columns)
     for col in mes_cols:
         stats.at['Promedio', col] = df[col].mean()
         stats.at['Máximo', col] = df[col].max()
         stats.at['Mínimo', col] = df[col].min()
-    # Mantenemos el Capital Inicial promedio para el formato
+    
     stats.at['Promedio', 'Cap_Inicial'] = df['Cap_Inicial'].mean()
-    return pd.concat([df, stats.astype(float, errors='ignore')])
+    return pd.concat([df, stats])
 
 def get_vintage_matrix(pref_num, pref_den, uen, filtros):
     where = f"WHERE uen = '{uen}' AND {COL_FECHA} >= (SELECT max({COL_FECHA}) - INTERVAL 24 MONTH FROM '{FILE_PATH}')"
@@ -78,17 +81,20 @@ try:
                 m_v = get_vintage_matrix(p_num, p_den, uen, filtros)
                 if not m_v.empty:
                     mes_cols = [c for c in m_v.columns if 'Mes' in c]
-                    # FIX FONDO NEGRO: Aplicamos gradiente solo a datos reales y forzamos fondo blanco en NaNs
-                    st.dataframe(m_v.style.format({"Cap_Inicial": "${:,.0f}"} | {c: "{:.2%}" for c in mes_cols}, na_rep="")
-                                .background_gradient(cmap='RdYlGn_r', axis=None, subset=(m_v.index[:-3], mes_cols))
-                                .set_properties(**{'background-color': 'white'}, subset=mes_cols), use_container_width=True)
+                    # FIX: Gradiente solo en cosechas. Highlight_null asegura fondo blanco en celdas vacías.
+                    st.dataframe(
+                        m_v.style.format({"Cap_Inicial": "${:,.0f}"} | {c: "{:.2%}" for c in mes_cols}, na_rep="")
+                        .background_gradient(cmap='RdYlGn_r', axis=None, subset=(m_v.index[:-3], mes_cols))
+                        .highlight_null(color='white'), 
+                        use_container_width=True
+                    )
                 st.divider()
 
         with tab2:
             st.title("Análisis de Maduración y Comportamiento")
             t_f = f"WHERE {COL_FECHA} >= (SELECT max({COL_FECHA}) - INTERVAL 24 MONTH FROM '{FILE_PATH}')"
             
-            # 1. Curvas PR (Solo datos reales)
+            # 1. Curvas PR
             m_v_pr = get_vintage_matrix('saldo_capital_total_c', 'capital_c', 'PR', filtros)
             if not m_v_pr.empty:
                 df_c = m_v_pr.iloc[:-3]
@@ -99,8 +105,8 @@ try:
                 fig_m.update_layout(title="Maduración - PR (Últimas 8 Cosechas)", yaxis_tickformat='.1%', plot_bgcolor='white')
                 st.plotly_chart(fig_m, use_container_width=True)
 
+            # 2 y 3. Tendencias Globales
             st.divider()
-            # 2 y 3. Tendencias Globales PR/SOLIDAR
             c1, c2 = st.columns(2)
             with c1:
                 q = f"SELECT strftime({COL_FECHA}, '%Y-%m') as C, sum(saldo_capital_total_c2)/NULLIF(sum(capital_c2),0) as R FROM '{FILE_PATH}' {t_f} AND uen='PR' GROUP BY 1 ORDER BY 1"
@@ -109,7 +115,7 @@ try:
                 q = f"SELECT strftime({COL_FECHA}, '%Y-%m') as C, sum(saldo_capital_total_890_c1)/NULLIF(sum(capital_c1),0) as R FROM '{FILE_PATH}' {t_f} AND uen='SOLIDAR' GROUP BY 1 ORDER BY 1"
                 st.plotly_chart(px.line(duckdb.query(q).df(), x='C', y='R', title="Evolución C1 Global - SOLIDAR", markers=True, color_discrete_sequence=['red']).update_layout(yaxis_tickformat='.1%', plot_bgcolor='white'))
 
-            # 4 y 5. Top 4 Productos PR/SOLIDAR
+            # 4 y 5. Top 4 Productos
             st.divider()
             c3, c4 = st.columns(2)
             with c3:
@@ -128,6 +134,7 @@ try:
         with tab3:
             st.title("📍 Detalle de Desempeño")
             st.subheader("📝 Resumen de Hallazgos")
+            # Narrativas PR y SOLIDAR
             for uen, col_r, col_c, coh in [('PR', 'saldo_capital_total_c2', 'capital_c2', 'C2'), ('SOLIDAR', 'saldo_capital_total_890_c1', 'capital_c1', 'C1')]:
                 q_sn = f"SELECT nombre_sucursal as n, sum({col_r})/NULLIF(sum({col_c}), 0) as r FROM '{FILE_PATH}' WHERE uen='{uen}' GROUP BY 1 ORDER BY 2 DESC LIMIT 1"
                 res_s = duckdb.query(q_sn).df()
@@ -156,3 +163,5 @@ try:
         st.error(f"Archivo '{FILE_PATH}' no encontrado.")
 except Exception as e:
     st.error(f"Error técnico detectado: {e}")
+
+st.caption("Dashboard Vintage Pro v25.0 | Michel Ovalle | Engine: DuckDB")
