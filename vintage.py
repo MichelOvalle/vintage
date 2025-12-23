@@ -9,7 +9,7 @@ import os
 # 1. Configuración de página
 st.set_page_config(page_title="Análisis Vintage Pro", layout="wide")
 
-# Estilos CSS para asegurar texto negro y limpieza
+# Estilos CSS
 st.markdown("""
     <style>
     .main { background-color: #FFFFFF; }
@@ -33,18 +33,14 @@ def build_in_clause(filter_list):
     return "('" + "', '".join(cleaned) + "')"
 
 def add_stats_to_df(df):
-    """Añade filas de Promedio, Máximo y Mínimo al final del DF"""
     if df.empty: return df
     mes_cols = [c for c in df.columns if 'Mes' in c]
-    # Aseguramos que los datos sean numéricos para calcular stats
     df[mes_cols] = df[mes_cols].apply(pd.to_numeric, errors='coerce')
-    
     stats = pd.DataFrame(index=['Promedio', 'Máximo', 'Mínimo'], columns=df.columns)
     for col in mes_cols:
         stats.at['Promedio', col] = df[col].mean()
         stats.at['Máximo', col] = df[col].max()
         stats.at['Mínimo', col] = df[col].min()
-    
     stats.at['Promedio', 'Cap_Inicial'] = df['Cap_Inicial'].mean()
     return pd.concat([df, stats])
 
@@ -53,11 +49,9 @@ def get_vintage_matrix(pref_num, pref_den, uen, filtros):
     for key, col in [('suc', 'nombre_sucursal'), ('prod', 'producto_agrupado'), ('orig', 'PR_Origen_Limpio')]:
         clause = build_in_clause(filtros.get(key))
         if clause: where += f" AND {col} IN {clause}"
-
     cols = f"strftime({COL_FECHA}, '%Y-%m') as Cosecha, sum({pref_den}1) as 'Cap_Inicial'"
     for i in range(1, 25):
         cols += f", sum({pref_num}{i}) / NULLIF(sum({pref_den}{i}), 0) as 'Mes {i}'"
-    
     df = duckdb.query(f"SELECT {cols} FROM '{FILE_PATH}' {where} GROUP BY 1 ORDER BY 1").df().set_index('Cosecha')
     return add_stats_to_df(df)
 
@@ -75,26 +69,19 @@ try:
 
         with tab1:
             st.title("Reporte de Ratios por Cosecha (24 meses)")
-            for uen, p_num, p_den, tit in [('PR', 'saldo_capital_total_c', 'capital_c', 'Ratio 30-150'), 
-                                           ('SOLIDAR', 'saldo_capital_total_890_c', 'capital_c', 'Ratio 8-90')]:
-                st.subheader(f"📊 UEN: {uen} ({tit})")
+            for uen, p_num, p_den, tit in [('PR', 'saldo_capital_total_c', 'capital_c', 'Ratio 30-150'), ('SOLIDAR', 'saldo_capital_total_890_c', 'capital_c', 'Ratio 8-90')]:
+                st.subheader(f"📊 {uen} ({tit})")
                 m_v = get_vintage_matrix(p_num, p_den, uen, filtros)
                 if not m_v.empty:
                     mes_cols = [c for c in m_v.columns if 'Mes' in c]
-                    # FIX: Gradiente solo en cosechas. Highlight_null asegura fondo blanco en celdas vacías.
-                    st.dataframe(
-                        m_v.style.format({"Cap_Inicial": "${:,.0f}"} | {c: "{:.2%}" for c in mes_cols}, na_rep="")
-                        .background_gradient(cmap='RdYlGn_r', axis=None, subset=(m_v.index[:-3], mes_cols))
-                        .highlight_null(color='white'), 
-                        use_container_width=True
-                    )
-                st.divider()
+                    st.dataframe(m_v.style.format({"Cap_Inicial": "${:,.0f}"} | {c: "{:.2%}" for c in mes_cols}, na_rep="")
+                                .background_gradient(cmap='RdYlGn_r', axis=None, subset=(m_v.index[:-3], mes_cols))
+                                .highlight_null(color='white'), use_container_width=True)
 
         with tab2:
             st.title("Análisis de Maduración y Comportamiento")
             t_f = f"WHERE {COL_FECHA} >= (SELECT max({COL_FECHA}) - INTERVAL 24 MONTH FROM '{FILE_PATH}')"
-            
-            # 1. Curvas PR
+            # Gráficas (Curvas, Tendencias Globales y Top 4)
             m_v_pr = get_vintage_matrix('saldo_capital_total_c', 'capital_c', 'PR', filtros)
             if not m_v_pr.empty:
                 df_c = m_v_pr.iloc[:-3]
@@ -104,27 +91,19 @@ try:
                     fig_m.add_trace(go.Scatter(x=fila.index, y=fila.values, mode='lines+markers', name=cos))
                 fig_m.update_layout(title="Maduración - PR (Últimas 8 Cosechas)", yaxis_tickformat='.1%', plot_bgcolor='white')
                 st.plotly_chart(fig_m, use_container_width=True)
-
-            # 2 y 3. Tendencias Globales
-            st.divider()
+            
             c1, c2 = st.columns(2)
             with c1:
                 q = f"SELECT strftime({COL_FECHA}, '%Y-%m') as C, sum(saldo_capital_total_c2)/NULLIF(sum(capital_c2),0) as R FROM '{FILE_PATH}' {t_f} AND uen='PR' GROUP BY 1 ORDER BY 1"
                 st.plotly_chart(px.line(duckdb.query(q).df(), x='C', y='R', title="Evolución C2 Global - PR", markers=True).update_layout(yaxis_tickformat='.1%', plot_bgcolor='white'))
-            with c2:
-                q = f"SELECT strftime({COL_FECHA}, '%Y-%m') as C, sum(saldo_capital_total_890_c1)/NULLIF(sum(capital_c1),0) as R FROM '{FILE_PATH}' {t_f} AND uen='SOLIDAR' GROUP BY 1 ORDER BY 1"
-                st.plotly_chart(px.line(duckdb.query(q).df(), x='C', y='R', title="Evolución C1 Global - SOLIDAR", markers=True, color_discrete_sequence=['red']).update_layout(yaxis_tickformat='.1%', plot_bgcolor='white'))
-
-            # 4 y 5. Top 4 Productos
-            st.divider()
-            c3, c4 = st.columns(2)
-            with c3:
                 qn = f"SELECT producto_agrupado FROM '{FILE_PATH}' WHERE uen='PR' GROUP BY 1 ORDER BY sum(saldo_capital_total_c2)/NULLIF(sum(capital_c2),0) DESC LIMIT 4"
                 ln = [str(r[0]) for r in duckdb.query(qn).fetchall()]
                 if ln:
                     qt = f"SELECT strftime({COL_FECHA}, '%Y-%m') as C, producto_agrupado as P, sum(saldo_capital_total_c2)/NULLIF(sum(capital_c2),0) as R FROM '{FILE_PATH}' WHERE P IN {build_in_clause(ln)} AND {COL_FECHA} >= (SELECT max({COL_FECHA}) - INTERVAL 24 MONTH FROM '{FILE_PATH}') GROUP BY 1, 2 ORDER BY 1"
                     st.plotly_chart(px.line(duckdb.query(qt).df(), x='C', y='R', color='P', title="Top 4 Críticos PR", markers=True).update_layout(yaxis_tickformat='.1%', plot_bgcolor='white'))
-            with c4:
+            with c2:
+                q = f"SELECT strftime({COL_FECHA}, '%Y-%m') as C, sum(saldo_capital_total_890_c1)/NULLIF(sum(capital_c1),0) as R FROM '{FILE_PATH}' {t_f} AND uen='SOLIDAR' GROUP BY 1 ORDER BY 1"
+                st.plotly_chart(px.line(duckdb.query(q).df(), x='C', y='R', title="Evolución C1 Global - SOLIDAR", markers=True, color_discrete_sequence=['red']).update_layout(yaxis_tickformat='.1%', plot_bgcolor='white'))
                 qn_s = f"SELECT producto_agrupado FROM '{FILE_PATH}' WHERE uen='SOLIDAR' GROUP BY 1 ORDER BY sum(saldo_capital_total_890_c1)/NULLIF(sum(capital_c1),0) DESC LIMIT 4"
                 ln_s = [str(r[0]) for r in duckdb.query(qn_s).fetchall()]
                 if ln_s:
@@ -133,8 +112,7 @@ try:
 
         with tab3:
             st.title("📍 Detalle de Desempeño")
-            st.subheader("📝 Resumen de Hallazgos")
-            # Narrativas PR y SOLIDAR
+            # Resúmenes Narrativos
             for uen, col_r, col_c, coh in [('PR', 'saldo_capital_total_c2', 'capital_c2', 'C2'), ('SOLIDAR', 'saldo_capital_total_890_c1', 'capital_c1', 'C1')]:
                 q_sn = f"SELECT nombre_sucursal as n, sum({col_r})/NULLIF(sum({col_c}), 0) as r FROM '{FILE_PATH}' WHERE uen='{uen}' GROUP BY 1 ORDER BY 2 DESC LIMIT 1"
                 res_s = duckdb.query(q_sn).df()
@@ -145,23 +123,23 @@ try:
                     pn, pr = res_p.iloc[0]['n'], res_p.iloc[0]['r']
                     st.write(f"**Para la uen:{uen}**")
                     st.write(f"La sucursal **{sn}**, tiene el porcentaje más alto con **{sr:.2%}**, siendo el producto_agrupado **{pn}** el que más participación tiene, con un **{pr:.2%}** para el cohorte {coh}.")
-
+            
             st.divider()
+            # Matrices Blindadas contra NaN en JSON
             c_mx1, c_mx2 = st.columns(2)
-            with c_mx1:
-                st.subheader("🔲 Sucursal vs Producto (C2 - PR)")
-                q_mx = f"SELECT nombre_sucursal as S, producto_agrupado as P, sum(saldo_capital_total_c2)/NULLIF(sum(capital_c2), 0) as R FROM '{FILE_PATH}' WHERE uen='PR' GROUP BY 1, 2"
-                df_mx = duckdb.query(q_mx).df().pivot(index='S', columns='P', values='R').fillna(0)
-                st.dataframe(df_mx.style.format("{:.2%}").background_gradient(cmap='RdYlGn_r', axis=None), use_container_width=True)
-            with c_mx2:
-                st.subheader("🔲 Sucursal vs Producto (C1 - SOLIDAR)")
-                q_mx_s = f"SELECT nombre_sucursal as S, producto_agrupado as P, sum(saldo_capital_total_890_c1)/NULLIF(sum(capital_c1), 0) as R FROM '{FILE_PATH}' WHERE uen='SOLIDAR' GROUP BY 1, 2"
-                df_mx_s = duckdb.query(q_mx_s).df().pivot(index='S', columns='P', values='R').fillna(0)
-                st.dataframe(df_mx_s.style.format("{:.2%}").background_gradient(cmap='RdYlGn_r', axis=None), use_container_width=True)
+            for uen, col_r, col_c, col_obj in [('PR', 'saldo_capital_total_c2', 'capital_c2', c_mx1), ('SOLIDAR', 'saldo_capital_total_890_c1', 'capital_c1', c_mx2)]:
+                with col_obj:
+                    st.subheader(f"🔲 Sucursal vs Producto ({uen})")
+                    q = f"SELECT COALESCE(nombre_sucursal, 'N/A') as S, COALESCE(producto_agrupado, 'N/A') as P, sum({col_r})/NULLIF(sum({col_c}), 0) as R FROM '{FILE_PATH}' WHERE uen='{uen}' GROUP BY 1, 2"
+                    df_m = duckdb.query(q).df()
+                    if not df_m.empty:
+                        # FIX CRÍTICO: Convertimos index y columnas a string para evitar NaN en el JSON del navegador
+                        df_p = df_m.pivot(index='S', columns='P', values='R').fillna(0)
+                        df_p.index = df_p.index.astype(str)
+                        df_p.columns = df_p.columns.astype(str)
+                        st.dataframe(df_p.style.format("{:.2%}").background_gradient(cmap='RdYlGn_r', axis=None), use_container_width=True)
 
     else:
         st.error(f"Archivo '{FILE_PATH}' no encontrado.")
 except Exception as e:
     st.error(f"Error técnico detectado: {e}")
-
-st.caption("Dashboard Vintage Pro v25.0 | Michel Ovalle | Engine: DuckDB")
