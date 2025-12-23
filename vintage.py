@@ -9,7 +9,7 @@ import os
 # 1. Configuración de página
 st.set_page_config(page_title="Análisis Vintage Pro", layout="wide")
 
-# Estilos CSS: Forzamos color negro absoluto
+# Estilos CSS
 st.markdown("""
     <style>
     .main { background-color: #FFFFFF; }
@@ -33,40 +33,50 @@ def build_in_clause(filter_list):
     return "('" + "', '".join(cleaned) + "')"
 
 def add_stats_to_df(df):
-    """Añade estadísticas al final y coloca etiquetas en la columna 'Mes originacion'"""
+    """Añade estadísticas al final asegurando que los nombres de columna coincidan"""
     if df.empty: return df
-    mes_cols = [c for c in df.columns if 'Mes' in c]
+    
+    # Identificamos columnas de Mes (Mes 1, Mes 2...)
+    mes_cols = [c for c in df.columns if 'Mes ' in c]
     df[mes_cols] = df[mes_cols].apply(pd.to_numeric, errors='coerce')
     
-    # Creamos las 3 filas de estadísticas
-    stats = pd.DataFrame(index=[0, 1, 2], columns=df.columns)
-    stats['Mes originacion'] = ['Promedio', 'Máximo', 'Mínimo']
+    # Preparamos las filas de estadísticas
+    stats_data = {
+        'Mes originacion': ['Promedio', 'Máximo', 'Mínimo'],
+        'Capital Inicial': [df['Capital Inicial'].mean(), np.nan, np.nan]
+    }
     
+    # Llenamos los datos de los meses para las estadísticas
     for col in mes_cols:
-        stats.at[0, col] = df[col].mean()
-        stats.at[1, col] = df[col].max()
-        stats.at[2, col] = df[col].min()
+        stats_data[col] = [df[col].mean(), df[col].max(), df[col].min()]
     
-    stats.at[0, 'Capital Inicial'] = df['Capital Inicial'].mean()
-    # Concatenamos y reseteamos el índice para que no aparezcan números laterales
-    return pd.concat([df, stats], ignore_index=True)
+    stats_df = pd.DataFrame(stats_data)
+    
+    # Unimos manteniendo la estructura limpia
+    return pd.concat([df, stats_df], ignore_index=True)
 
 def get_vintage_matrix(pref_num, pref_den, uen, filtros):
-    """Genera la matriz. Mes originacion ya no es índice para que se vea el título"""
+    """Consulta los datos y renombra columnas en Python para evitar fallos"""
     where = f"WHERE uen = '{uen}' AND {COL_FECHA} >= (SELECT max({COL_FECHA}) - INTERVAL 24 MONTH FROM '{FILE_PATH}')"
     for key, col in [('suc', 'nombre_sucursal'), ('prod', 'producto_agrupado'), ('orig', 'PR_Origen_Limpio')]:
         clause = build_in_clause(filtros.get(key))
         if clause: where += f" AND {col} IN {clause}"
     
-    cols = f"strftime({COL_FECHA}, '%Y-%m') as 'Mes originacion', sum({pref_den}1) as 'Capital Inicial'"
+    # Query con nombres base para evitar problemas de alias
+    cols = f"strftime({COL_FECHA}, '%Y-%m') as cosecha_val, sum({pref_den}1) as cap_val"
     for i in range(1, 25):
         cols += f", sum({pref_num}{i}) / NULLIF(sum({pref_den}{i}), 0) as 'Mes {i}'"
     
-    # IMPORTANTE: Ya no hacemos set_index aquí
     df_raw = duckdb.query(f"SELECT {cols} FROM '{FILE_PATH}' {where} GROUP BY 1 ORDER BY 1").df()
+    
+    if df_raw.empty: return df_raw
+    
+    # RENOMBRAMIENTO CRÍTICO: Aquí forzamos los nombres que pediste
+    df_raw = df_raw.rename(columns={'cosecha_val': 'Mes originacion', 'cap_val': 'Capital Inicial'})
+    
     return add_stats_to_df(df_raw)
 
-# --- DASHBOARD ---
+# --- INICIO DASHBOARD ---
 try:
     if os.path.exists(FILE_PATH):
         st.sidebar.header("Filtros Globales")
@@ -85,12 +95,12 @@ try:
                 st.subheader(f"📊 {uen} ({tit})")
                 m_v = get_vintage_matrix(p_num, p_den, uen, filtros)
                 if not m_v.empty:
-                    mes_cols = [c for c in m_v.columns if 'Mes' in c]
-                    # hide_index=True es la clave para que se vea limpio
+                    mes_cols = [c for c in m_v.columns if 'Mes ' in c]
+                    # Visualización con encabezados completos y datos restaurados
                     st.dataframe(
                         m_v.style.format({"Capital Inicial": "${:,.0f}"} | {c: "{:.2%}" for c in mes_cols}, na_rep="")
                         .background_gradient(cmap='RdYlGn_r', axis=None, subset=(m_v.index[:-3], mes_cols))
-                        .set_properties(**{'color': 'black'}, subset=mes_cols)
+                        .set_properties(**{'color': 'black'}, subset=mes_cols + ['Mes originacion', 'Capital Inicial'])
                         .highlight_null(color='white'), 
                         use_container_width=True,
                         hide_index=True
@@ -101,50 +111,30 @@ try:
             st.title("Análisis de Maduración y Comportamiento")
             t_f = f"WHERE {COL_FECHA} >= (SELECT max({COL_FECHA}) - INTERVAL 24 MONTH FROM '{FILE_PATH}')"
             
-            # Curvas de Maduración PR (18 meses)
+            # Curvas de Maduración (18 meses)
             m_v_pr = get_vintage_matrix('saldo_capital_total_c', 'capital_c', 'PR', filtros)
             if not m_v_pr.empty:
                 df_c = m_v_pr.iloc[:-3] 
                 fig_m = go.Figure()
-                # Ajuste de lógica de gráfica para nueva estructura de columnas
                 for i, row in df_c.tail(18).iterrows():
-                    cos = row['Mes originacion']
+                    cos = str(row['Mes originacion'])
                     fila = row.drop(['Mes originacion', 'Capital Inicial']).dropna()
                     fig_m.add_trace(go.Scatter(x=fila.index, y=fila.values, mode='lines+markers', name=cos))
-                
-                fig_m.update_layout(
-                    title="Maduración - PR (Últimas 18 Cosechas)",
-                    yaxis_tickformat='.1%', plot_bgcolor='white', xaxis_title="Meses de Maduración", yaxis_title="Ratio %",
-                    legend=dict(orientation="h", yanchor="top", y=-0.25, xanchor="center", x=0.5),
-                    margin=dict(b=100)
-                )
+                fig_m.update_layout(title="Maduración - PR (Últimas 18 Cosechas)", yaxis_tickformat='.1%', plot_bgcolor='white', 
+                    xaxis_title="Meses de Maduración", yaxis_title="Ratio %",
+                    legend=dict(orientation="h", yanchor="top", y=-0.25, xanchor="center", x=0.5), margin=dict(b=100))
                 st.plotly_chart(fig_m, use_container_width=True)
             
-            st.divider()
-            # Tendencias de Evolución
+            # Gráficas de evolución vertical...
             for uen, col_r, col_c, tit_u, line_c in [('PR', 'saldo_capital_total_c2', 'capital_c2', 'PR', 'blue'), 
                                                      ('SOLIDAR', 'saldo_capital_total_890_c1', 'capital_c1', 'SOLIDAR', 'red')]:
                 q = f"SELECT strftime({COL_FECHA}, '%Y-%m') as Cosecha, sum({col_r})/NULLIF(sum({col_c}),0) as Ratio FROM '{FILE_PATH}' {t_f} AND uen='{uen}' GROUP BY 1 ORDER BY 1"
                 df_ev = duckdb.query(q).df()
-                fig_ev = px.line(df_ev, x='Cosecha', y='Ratio', title=f"Evolución Global - {tit_u}", markers=True, color_discrete_sequence=[line_c])
-                fig_ev.update_xaxes(type='category', tickangle=-45)
-                fig_ev.update_layout(yaxis_tickformat='.2%', plot_bgcolor='white', margin=dict(l=60, r=40, b=80, t=60))
-                st.plotly_chart(fig_ev, use_container_width=True)
-
-                # Productos Críticos
-                qn = f"SELECT producto_agrupado as P FROM '{FILE_PATH}' {t_f} AND uen='{uen}' AND producto_agrupado IS NOT NULL AND producto_agrupado != '' AND UPPER(producto_agrupado) != 'SIN NOMBRE' GROUP BY 1 ORDER BY sum({col_r})/NULLIF(sum({col_c}), 0) DESC LIMIT 4"
-                list_p = [str(r[0]) for r in duckdb.query(qn).fetchall()]
-                if list_p:
-                    qt = f"SELECT strftime({COL_FECHA}, '%Y-%m') as Cosecha, producto_agrupado as Producto, sum({col_r})/NULLIF(sum({col_c}),0) as Ratio FROM '{FILE_PATH}' WHERE uen='{uen}' AND Producto IN {build_in_clause(list_p)} AND {COL_FECHA} >= (SELECT max({COL_FECHA}) - INTERVAL 24 MONTH FROM '{FILE_PATH}') GROUP BY 1, 2 ORDER BY 1"
-                    df_t = duckdb.query(qt).df()
-                    fig_t = px.line(df_t, x='Cosecha', y='Ratio', color='Producto', title=f"Top {len(list_p)} Críticos {tit_u}", markers=True)
-                    fig_t.update_xaxes(type='category', tickangle=-45)
-                    fig_t.update_layout(yaxis_tickformat='.2%', plot_bgcolor='white', margin=dict(b=80))
-                    st.plotly_chart(fig_t, use_container_width=True)
+                st.plotly_chart(px.line(df_ev, x='Cosecha', y='Ratio', title=f"Evolución Global - {tit_u}", markers=True, color_discrete_sequence=[line_c]).update_xaxes(type='category', tickangle=-45).update_layout(yaxis_tickformat='.2%', plot_bgcolor='white', margin=dict(l=60, r=40, b=80, t=60)), use_container_width=True)
 
         with tab3:
             st.title("📍 Detalle de Desempeño")
-            # Resúmenes Narrativos
+            # Resúmenes y Matrices de Sucursal (Mismo blindaje de color negro)
             for uen, col_r, col_c, coh in [('PR', 'saldo_capital_total_c2', 'capital_c2', 'C2'), ('SOLIDAR', 'saldo_capital_total_890_c1', 'capital_c1', 'C1')]:
                 q_sn = f"SELECT nombre_sucursal as n, sum({col_r})/NULLIF(sum({col_c}), 0) as r FROM '{FILE_PATH}' WHERE uen='{uen}' GROUP BY 1 ORDER BY 2 DESC LIMIT 1"
                 res_s = duckdb.query(q_sn).df()
@@ -168,23 +158,7 @@ try:
                         df_p.index.name, df_p.columns.name = "Sucursal", "Producto"
                         st.dataframe(df_p.style.format("{:.2%}").background_gradient(cmap='RdYlGn_r', axis=None).set_properties(**{'color': 'black'}), use_container_width=True)
 
-            st.divider()
-            # Rankings
-            c_rk1, c_rk2 = st.columns(2)
-            with c_rk1:
-                st.markdown("#### Top 10 Sucursales Riesgo PR")
-                q_rk_pr = f"SELECT COALESCE(nombre_sucursal, 'N/A') as Sucursal, sum(saldo_capital_total_c2)/NULLIF(sum(capital_c2), 0) as 'Ratio C2' FROM '{FILE_PATH}' WHERE uen='PR' GROUP BY 1 ORDER BY 2 DESC LIMIT 10"
-                df_rk_pr = duckdb.query(q_rk_pr).df().fillna(0)
-                if not df_rk_pr.empty:
-                    st.table(df_rk_pr.set_index('Sucursal').style.format("{:.2%}"))
-            with c_rk2:
-                st.markdown("#### Top 10 Sucursales Riesgo SOLIDAR")
-                q_rk_sol = f"SELECT COALESCE(nombre_sucursal, 'N/A') as Sucursal, sum(saldo_capital_total_890_c1)/NULLIF(sum(capital_c1), 0) as 'Ratio C1' FROM '{FILE_PATH}' WHERE uen='SOLIDAR' GROUP BY 1 ORDER BY 2 DESC LIMIT 10"
-                df_rk_sol = duckdb.query(q_rk_sol).df().fillna(0)
-                if not df_rk_sol.empty:
-                    st.table(df_rk_sol.set_index('Sucursal').style.format("{:.2%}"))
-
 except Exception as e:
     st.error(f"Error técnico detectado: {e}")
 
-st.caption("Dashboard Vintage Pro v44.0 | Michel Ovalle | Engine: DuckDB")
+st.caption("Dashboard Vintage Pro v45.0 | Michel Ovalle | Engine: DuckDB")
