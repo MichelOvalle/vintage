@@ -9,14 +9,12 @@ import os
 # 1. Configuración de página
 st.set_page_config(page_title="Análisis Vintage Pro", layout="wide")
 
-# Estilos CSS: Forzamos color negro global y eliminamos sombras
+# Estilos CSS: Forzamos color negro absoluto
 st.markdown("""
     <style>
     .main { background-color: #FFFFFF; }
-    /* Forzado de color negro en todas las celdas y cabeceras */
     [data-testid="stTable"] td, [data-testid="stTable"] th { color: black !important; }
     [data-testid="stDataFrame"] td, [data-testid="stDataFrame"] th { color: black !important; }
-    div[data-testid="stExpander"] div { color: black !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -35,31 +33,37 @@ def build_in_clause(filter_list):
     return "('" + "', '".join(cleaned) + "')"
 
 def add_stats_to_df(df):
+    """Añade filas de estadísticas al final del DataFrame con los nuevos nombres de columna"""
     if df.empty: return df
     mes_cols = [c for c in df.columns if 'Mes' in c]
     df[mes_cols] = df[mes_cols].apply(pd.to_numeric, errors='coerce')
+    
     stats = pd.DataFrame(index=['Promedio', 'Máximo', 'Mínimo'], columns=df.columns)
     for col in mes_cols:
         stats.at['Promedio', col] = df[col].mean()
         stats.at['Máximo', col] = df[col].max()
         stats.at['Mínimo', col] = df[col].min()
-    stats.at['Promedio', 'Cap_Inicial'] = df['Cap_Inicial'].mean()
+    
+    # Calculamos el promedio para la columna renombrada
+    stats.at['Promedio', 'Capital Inicial'] = df['Capital Inicial'].mean()
     return pd.concat([df, stats])
 
 def get_vintage_matrix(pref_num, pref_den, uen, filtros):
+    """Genera la matriz con los nombres: Mes originacion y Capital Inicial"""
     where = f"WHERE uen = '{uen}' AND {COL_FECHA} >= (SELECT max({COL_FECHA}) - INTERVAL 24 MONTH FROM '{FILE_PATH}')"
     for key, col in [('suc', 'nombre_sucursal'), ('prod', 'producto_agrupado'), ('orig', 'PR_Origen_Limpio')]:
         clause = build_in_clause(filtros.get(key))
         if clause: where += f" AND {col} IN {clause}"
     
-    cols = f"strftime({COL_FECHA}, '%Y-%m') as Cosecha, sum({pref_den}1) as 'Cap_Inicial'"
+    # SQL con las nuevas etiquetas solicitadas
+    cols = f"strftime({COL_FECHA}, '%Y-%m') as 'Mes originacion', sum({pref_den}1) as 'Capital Inicial'"
     for i in range(1, 25):
         cols += f", sum({pref_num}{i}) / NULLIF(sum({pref_den}{i}), 0) as 'Mes {i}'"
     
-    df = duckdb.query(f"SELECT {cols} FROM '{FILE_PATH}' {where} GROUP BY 1 ORDER BY 1").df().set_index('Cosecha')
+    df = duckdb.query(f"SELECT {cols} FROM '{FILE_PATH}' {where} GROUP BY 1 ORDER BY 1").df().set_index('Mes originacion')
     return add_stats_to_df(df)
 
-# --- INICIO DASHBOARD ---
+# --- DASHBOARD ---
 try:
     if os.path.exists(FILE_PATH):
         st.sidebar.header("Filtros Globales")
@@ -79,9 +83,9 @@ try:
                 m_v = get_vintage_matrix(p_num, p_den, uen, filtros)
                 if not m_v.empty:
                     mes_cols = [c for c in m_v.columns if 'Mes' in c]
-                    # Aplicamos el estilo restaurado: semáforo con texto negro forzado
+                    # Formateo con Capital Inicial y texto negro
                     st.dataframe(
-                        m_v.style.format({"Cap_Inicial": "${:,.0f}"} | {c: "{:.2%}" for c in mes_cols}, na_rep="")
+                        m_v.style.format({"Capital Inicial": "${:,.0f}"} | {c: "{:.2%}" for c in mes_cols}, na_rep="")
                         .background_gradient(cmap='RdYlGn_r', axis=None, subset=(m_v.index[:-3], mes_cols))
                         .set_properties(**{'color': 'black'}, subset=mes_cols)
                         .highlight_null(color='white'), 
@@ -93,13 +97,13 @@ try:
             st.title("Análisis de Maduración y Comportamiento")
             t_f = f"WHERE {COL_FECHA} >= (SELECT max({COL_FECHA}) - INTERVAL 24 MONTH FROM '{FILE_PATH}')"
             
-            # 1. Curvas de Maduración (18 meses con leyenda inferior)
+            # Curvas de Maduración PR (18 meses)
             m_v_pr = get_vintage_matrix('saldo_capital_total_c', 'capital_c', 'PR', filtros)
             if not m_v_pr.empty:
                 df_c = m_v_pr.iloc[:-3] 
                 fig_m = go.Figure()
                 for cos in df_c.tail(18).index:
-                    fila = df_c.loc[cos].drop('Cap_Inicial').dropna()
+                    fila = df_c.loc[cos].drop('Capital Inicial').dropna()
                     fig_m.add_trace(go.Scatter(x=fila.index, y=fila.values, mode='lines+markers', name=cos))
                 
                 fig_m.update_layout(
@@ -111,9 +115,7 @@ try:
                 st.plotly_chart(fig_m, use_container_width=True)
             
             st.divider()
-            st.subheader("Tendencias de Comportamiento Global (24 Meses)")
-            
-            # Evolución Global Vertical (PR y SOLIDAR)
+            # Tendencias de Evolución Vertical
             for uen, col_r, col_c, tit_u, line_c in [('PR', 'saldo_capital_total_c2', 'capital_c2', 'PR', 'blue'), 
                                                      ('SOLIDAR', 'saldo_capital_total_890_c1', 'capital_c1', 'SOLIDAR', 'red')]:
                 q = f"SELECT strftime({COL_FECHA}, '%Y-%m') as Cosecha, sum({col_r})/NULLIF(sum({col_c}),0) as Ratio FROM '{FILE_PATH}' {t_f} AND uen='{uen}' GROUP BY 1 ORDER BY 1"
@@ -123,12 +125,8 @@ try:
                 fig_ev.update_layout(yaxis_tickformat='.2%', plot_bgcolor='white', margin=dict(l=60, r=40, b=80, t=60))
                 st.plotly_chart(fig_ev, use_container_width=True)
 
-                # Top Productos Críticos Reales (Filtro v40)
-                qn = f"""
-                    SELECT producto_agrupado as P FROM '{FILE_PATH}' {t_f} AND uen='{uen}' 
-                    AND producto_agrupado IS NOT NULL AND producto_agrupado != '' AND UPPER(producto_agrupado) != 'SIN NOMBRE'
-                    GROUP BY 1 ORDER BY sum({col_r})/NULLIF(sum({col_c}), 0) DESC LIMIT 4
-                """
+                # Productos Críticos
+                qn = f"SELECT producto_agrupado as P FROM '{FILE_PATH}' {t_f} AND uen='{uen}' AND producto_agrupado IS NOT NULL AND producto_agrupado != '' AND UPPER(producto_agrupado) != 'SIN NOMBRE' GROUP BY 1 ORDER BY sum({col_r})/NULLIF(sum({col_c}), 0) DESC LIMIT 4"
                 list_p = [str(r[0]) for r in duckdb.query(qn).fetchall()]
                 if list_p:
                     qt = f"SELECT strftime({COL_FECHA}, '%Y-%m') as Cosecha, producto_agrupado as Producto, sum({col_r})/NULLIF(sum({col_c}),0) as Ratio FROM '{FILE_PATH}' WHERE uen='{uen}' AND Producto IN {build_in_clause(list_p)} AND {COL_FECHA} >= (SELECT max({COL_FECHA}) - INTERVAL 24 MONTH FROM '{FILE_PATH}') GROUP BY 1, 2 ORDER BY 1"
@@ -140,7 +138,7 @@ try:
 
         with tab3:
             st.title("📍 Detalle de Desempeño")
-            # 1. Narrativas PR y SOLIDAR
+            # Resúmenes Narrativos
             for uen, col_r, col_c, coh in [('PR', 'saldo_capital_total_c2', 'capital_c2', 'C2'), ('SOLIDAR', 'saldo_capital_total_890_c1', 'capital_c1', 'C1')]:
                 q_sn = f"SELECT nombre_sucursal as n, sum({col_r})/NULLIF(sum({col_c}), 0) as r FROM '{FILE_PATH}' WHERE uen='{uen}' GROUP BY 1 ORDER BY 2 DESC LIMIT 1"
                 res_s = duckdb.query(q_sn).df()
@@ -153,7 +151,7 @@ try:
                     st.write(f"La sucursal **{sn}**, tiene el porcentaje más alto con **{sr:.2%}**, siendo el producto_agrupado **{pn}** el que más participación tiene, con un **{pr:.2%}** para el cohorte {coh}.")
             
             st.divider()
-            # 2. Matrices Cruzadas (Sucursal vs Producto)
+            # Matrices Cruzadas (Sucursal vs Producto)
             c_mx1, c_mx2 = st.columns(2)
             for uen, col_r, col_c, col_obj in [('PR', 'saldo_capital_total_c2', 'capital_c2', c_mx1), ('SOLIDAR', 'saldo_capital_total_890_c1', 'capital_c1', c_mx2)]:
                 with col_obj:
@@ -166,7 +164,7 @@ try:
                         st.dataframe(df_p.style.format("{:.2%}").background_gradient(cmap='RdYlGn_r', axis=None).set_properties(**{'color': 'black'}), use_container_width=True)
 
             st.divider()
-            # 3. Rankings Top 10 Sucursales
+            # Rankings
             c_rk1, c_rk2 = st.columns(2)
             with c_rk1:
                 st.markdown("#### Top 10 Sucursales Riesgo PR")
