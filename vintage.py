@@ -97,13 +97,13 @@ try:
             
             st.divider()
             c1, c2 = st.columns(2)
-            # --- CORRECCIÓN EJE X: MOSTRAR TODOS LOS MESES ---
+            # --- CORRECCIÓN EJE X: FORMATO YYYY-MM ---
             with c1:
                 q_p = f"SELECT strftime({COL_FECHA}, '%Y-%m') as Cosecha, sum(saldo_capital_total_c2)/NULLIF(sum(capital_c2),0) as Ratio FROM '{FILE_PATH}' {t_f} AND uen='PR' GROUP BY 1 ORDER BY 1"
                 df_ev_pr = duckdb.query(q_p).df()
                 fig_ev_pr = px.line(df_ev_pr, x='Cosecha', y='Ratio', title="Evolución C2 Global - PR", markers=True, labels={'Cosecha': 'Cosecha', 'Ratio': 'Ratio %'})
-                # Forzamos todos los ticks del eje X y rotamos 45 grados
-                fig_ev_pr.update_xaxes(tickmode='array', tickvals=df_ev_pr['Cosecha'], tickangle=-45)
+                # Forzamos tipo 'category' para usar el string YYYY-MM directamente
+                fig_ev_pr.update_xaxes(type='category', tickangle=-45)
                 fig_ev_pr.update_layout(yaxis_tickformat='.2%', plot_bgcolor='white', margin=dict(l=60, r=40, b=80, t=60))
                 st.plotly_chart(fig_ev_pr, use_container_width=True)
                 
@@ -113,7 +113,7 @@ try:
                     qt = f"SELECT strftime({COL_FECHA}, '%Y-%m') as Cosecha, producto_agrupado as Producto, sum(saldo_capital_total_c2)/NULLIF(sum(capital_c2),0) as Ratio FROM '{FILE_PATH}' WHERE Producto IN {build_in_clause(ln)} AND {COL_FECHA} >= (SELECT max({COL_FECHA}) - INTERVAL 24 MONTH FROM '{FILE_PATH}') GROUP BY 1, 2 ORDER BY 1"
                     df_top_pr = duckdb.query(qt).df()
                     fig_top_pr = px.line(df_top_pr, x='Cosecha', y='Ratio', color='Producto', title="Top 4 Críticos PR", markers=True, labels={'Cosecha': 'Cosecha', 'Ratio': 'Ratio %'})
-                    fig_top_pr.update_xaxes(tickmode='array', tickvals=df_top_pr['Cosecha'].unique(), tickangle=-45)
+                    fig_top_pr.update_xaxes(type='category', tickangle=-45)
                     fig_top_pr.update_layout(yaxis_tickformat='.2%', plot_bgcolor='white', margin=dict(b=80))
                     st.plotly_chart(fig_top_pr, use_container_width=True)
             
@@ -121,7 +121,7 @@ try:
                 q_s = f"SELECT strftime({COL_FECHA}, '%Y-%m') as Cosecha, sum(saldo_capital_total_890_c1)/NULLIF(sum(capital_c1),0) as Ratio FROM '{FILE_PATH}' {t_f} AND uen='SOLIDAR' GROUP BY 1 ORDER BY 1"
                 df_ev_sol = duckdb.query(q_s).df()
                 fig_ev_sol = px.line(df_ev_sol, x='Cosecha', y='Ratio', title="Evolución C1 Global - SOLIDAR", markers=True, color_discrete_sequence=['red'], labels={'Cosecha': 'Cosecha', 'Ratio': 'Ratio %'})
-                fig_ev_sol.update_xaxes(tickmode='array', tickvals=df_ev_sol['Cosecha'], tickangle=-45)
+                fig_ev_sol.update_xaxes(type='category', tickangle=-45)
                 fig_ev_sol.update_layout(yaxis_tickformat='.2%', plot_bgcolor='white', margin=dict(l=60, r=40, b=80, t=60))
                 st.plotly_chart(fig_ev_sol, use_container_width=True)
                 
@@ -131,7 +131,7 @@ try:
                     qt_s = f"SELECT strftime({COL_FECHA}, '%Y-%m') as Cosecha, producto_agrupado as Producto, sum(saldo_capital_total_890_c1)/NULLIF(sum(capital_c1),0) as Ratio FROM '{FILE_PATH}' WHERE Producto IN {build_in_clause(ln_s)} AND {COL_FECHA} >= (SELECT max({COL_FECHA}) - INTERVAL 24 MONTH FROM '{FILE_PATH}') GROUP BY 1, 2 ORDER BY 1"
                     df_top_sol = duckdb.query(qt_s).df()
                     fig_top_sol = px.line(df_top_sol, x='Cosecha', y='Ratio', color='Producto', title="Top 4 Críticos SOLIDAR", markers=True, labels={'Cosecha': 'Cosecha', 'Ratio': 'Ratio %'})
-                    fig_top_sol.update_xaxes(tickmode='array', tickvals=df_top_sol['Cosecha'].unique(), tickangle=-45)
+                    fig_top_sol.update_xaxes(type='category', tickangle=-45)
                     fig_top_sol.update_layout(yaxis_tickformat='.2%', plot_bgcolor='white', margin=dict(b=80))
                     st.plotly_chart(fig_top_sol, use_container_width=True)
 
