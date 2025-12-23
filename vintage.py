@@ -84,22 +84,22 @@ try:
             st.title("Análisis de Maduración y Comportamiento")
             t_f = f"WHERE {COL_FECHA} >= (SELECT max({COL_FECHA}) - INTERVAL 24 MONTH FROM '{FILE_PATH}')"
             
-            # 1. Curvas de Maduración PR - ACTUALIZADO A 24 COSECHAS
+            # 1. Curvas de Maduración PR - AJUSTADO A 18 COSECHAS
             m_v_pr = get_vintage_matrix('saldo_capital_total_c', 'capital_c', 'PR', filtros)
             if not m_v_pr.empty:
-                df_c = m_v_pr.iloc[:-3] # Quitamos Promedio, Máximo y Mínimo
+                df_c = m_v_pr.iloc[:-3] 
                 fig_m = go.Figure()
-                # Mostramos las últimas 24 cosechas solicitadas
-                for cos in df_c.tail(24).index:
+                # Michel: Aquí configuramos los 18 meses que solicitaste
+                for cos in df_c.tail(18).index:
                     fila = df_c.loc[cos].drop('Cap_Inicial').dropna()
                     fig_m.add_trace(go.Scatter(x=fila.index, y=fila.values, mode='lines+markers', name=cos))
-                fig_m.update_layout(title="Maduración - PR (Últimas 24 Cosechas)", yaxis_tickformat='.1%', plot_bgcolor='white', xaxis_title="Meses de Maduración", yaxis_title="Ratio %")
+                fig_m.update_layout(title="Maduración - PR (Últimas 18 Cosechas)", yaxis_tickformat='.1%', plot_bgcolor='white', xaxis_title="Meses de Maduración", yaxis_title="Ratio %")
                 st.plotly_chart(fig_m, use_container_width=True)
             
             st.divider()
             st.subheader("Tendencias de Comportamiento Global (24 Meses)")
             
-            # 2. Evolución Global - PR (Vertical para mejor lectura de YYYY-MM)
+            # 2. Evolución Global - PR (Vertical)
             q_p = f"SELECT strftime({COL_FECHA}, '%Y-%m') as Cosecha, sum(saldo_capital_total_c2)/NULLIF(sum(capital_c2),0) as Ratio FROM '{FILE_PATH}' {t_f} AND uen='PR' GROUP BY 1 ORDER BY 1"
             df_ev_pr = duckdb.query(q_p).df()
             fig_ev_pr = px.line(df_ev_pr, x='Cosecha', y='Ratio', title="Evolución C2 Global - PR", markers=True, labels={'Cosecha': 'Cosecha', 'Ratio': 'Ratio %'})
@@ -142,7 +142,7 @@ try:
 
         with tab3:
             st.title("📍 Detalle de Desempeño")
-            # Resúmenes Narrativos según formato solicitado
+            # Narrativas PR y SOLIDAR
             for uen, col_r, col_c, coh in [('PR', 'saldo_capital_total_c2', 'capital_c2', 'C2'), ('SOLIDAR', 'saldo_capital_total_890_c1', 'capital_c1', 'C1')]:
                 q_sn = f"SELECT nombre_sucursal as n, sum({col_r})/NULLIF(sum({col_c}), 0) as r FROM '{FILE_PATH}' WHERE uen='{uen}' GROUP BY 1 ORDER BY 2 DESC LIMIT 1"
                 res_s = duckdb.query(q_sn).df()
@@ -185,4 +185,4 @@ try:
 except Exception as e:
     st.error(f"Error técnico detectado: {e}")
 
-st.caption("Dashboard Vintage Pro v34.0 | Michel Ovalle | Engine: DuckDB")
+st.caption("Dashboard Vintage Pro v35.0 | Michel Ovalle | Engine: DuckDB")
