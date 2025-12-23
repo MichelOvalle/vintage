@@ -8,14 +8,8 @@ import os
 # 1. Configuración de página
 st.set_page_config(page_title="Análisis Vintage Pro", layout="wide")
 
-# Estilos CSS para asegurar legibilidad
-st.markdown("""
-    <style>
-    .main { background-color: #FFFFFF; }
-    [data-testid="stTable"] td, [data-testid="stTable"] th { color: black !important; }
-    [data-testid="stDataFrame"] td { color: black !important; }
-    </style>
-    """, unsafe_allow_html=True)
+# Estilos CSS
+st.markdown("<style>.main { background-color: #FFFFFF; } [data-testid='stTable'] td { color: black !important; }</style>", unsafe_allow_html=True)
 
 FILE_PATH = "vintage_acum.parquet"
 COL_FECHA = "CAST(mes_apertura || '-01' AS DATE)"
@@ -60,64 +54,84 @@ try:
             st.title("Reporte de Ratios por Cosecha (Últ. 24 meses)")
             m_pr = get_vintage_matrix('saldo_capital_total_c', 'capital_c', 'PR', filtros)
             if not m_pr.empty:
-                st.subheader("📊 UEN: PR (30-150)")
+                st.subheader("📊 UEN: PR (Ratio 30-150)")
                 st.dataframe(m_pr.style.format({"Cap_Inicial": "${:,.0f}"} | {c: "{:.2%}" for c in m_pr.columns if 'Mes' in c}, na_rep="").background_gradient(cmap='RdYlGn_r', axis=None, subset=[c for c in m_pr.columns if 'Mes' in c]), use_container_width=True)
             
             st.divider()
             m_sol = get_vintage_matrix('saldo_capital_total_890_c', 'capital_c', 'SOLIDAR', filtros)
             if not m_sol.empty:
-                st.subheader("📊 UEN: SOLIDAR (8-90)")
+                st.subheader("📊 UEN: SOLIDAR (Ratio 8-90)")
                 st.dataframe(m_sol.style.format({"Cap_Inicial": "${:,.0f}"} | {c: "{:.2%}" for c in m_sol.columns if 'Mes' in c}, na_rep="").background_gradient(cmap='RdYlGn_r', axis=None, subset=[c for c in m_sol.columns if 'Mes' in c]), use_container_width=True)
 
         with tab2:
             st.title("Análisis de Maduración y Comportamiento")
             
-            # 1. Curvas de Maduración
+            # 1. Curvas de Maduración (Gráfica definida)
             if not m_pr.empty:
                 fig_curves = go.Figure()
                 for cosecha in m_pr.tail(8).index:
                     fila = m_pr.loc[cosecha].drop('Cap_Inicial').dropna()
                     fig_curves.add_trace(go.Scatter(x=fila.index, y=fila.values, mode='lines+markers', name=cosecha))
-                fig_curves.update_layout(title="Maduración - PR (Últimas 8 Cosechas)", yaxis_tickformat='.1%', plot_bgcolor='white', xaxis_title="Meses")
+                fig_curves.update_layout(title="Curvas de Maduración - PR (Últimas 8 Cosechas)", yaxis_tickformat='.1%', plot_bgcolor='white', xaxis_title="Meses")
                 st.plotly_chart(fig_curves, use_container_width=True)
 
             st.divider()
-            # 2. Top 4 Productos Críticos (Evolución Temporal PR)
-            st.subheader("⚠️ Top 4 Productos Críticos: Evolución Temporal (PR)")
-            # Buscamos los 4 nombres con más riesgo acumulado
-            q_top4_names = f"SELECT producto_agrupado FROM '{FILE_PATH}' WHERE uen='PR' GROUP BY 1 ORDER BY sum(saldo_capital_total_c2)/NULLIF(sum(capital_c2), 0) DESC LIMIT 4"
-            list_top4 = [r[0] for r in duckdb.query(q_top4_names).fetchall()]
+            # 2. Tendencias Globales (X: 24 meses) - GRÁFICAS RESTAURADAS
+            st.subheader("Tendencia de Comportamiento Global (Ventana 24 meses)")
+            col_g1, col_g2 = st.columns(2)
+            time_filter = f"WHERE {COL_FECHA} >= (SELECT max({COL_FECHA}) - INTERVAL 24 MONTH FROM '{FILE_PATH}')"
             
-            if list_top4:
-                q_top4_trend = f"""
-                    SELECT strftime({COL_FECHA}, '%Y-%m') as Cosecha, producto_agrupado, sum(saldo_capital_total_c2)/NULLIF(sum(capital_c2), 0) as Ratio 
-                    FROM '{FILE_PATH}' 
-                    WHERE producto_agrupado IN ('{"', '".join(list_top4)}') 
-                    AND {COL_FECHA} >= (SELECT max({COL_FECHA}) - INTERVAL 24 MONTH FROM '{FILE_PATH}')
-                    GROUP BY 1, 2 ORDER BY 1
-                """
-                df_top4 = duckdb.query(q_top4_trend).df()
-                st.plotly_chart(px.line(df_top4, x='Cosecha', y='Ratio', color='producto_agrupado', title="Evolución C2 - Productos Críticos PR", markers=True).update_layout(yaxis_tickformat='.1%', plot_bgcolor='white'))
+            with col_g1:
+                q_ev_pr = f"SELECT strftime({COL_FECHA}, '%Y-%m') as Cosecha, sum(saldo_capital_total_c2)/NULLIF(sum(capital_c2), 0) as Ratio FROM '{FILE_PATH}' {time_filter} AND uen='PR' GROUP BY 1 ORDER BY 1"
+                st.plotly_chart(px.line(duckdb.query(q_ev_pr).df(), x='Cosecha', y='Ratio', title="Ratio C2 Global - PR", markers=True, color_discrete_sequence=['#1f77b4']).update_layout(yaxis_tickformat='.1%', plot_bgcolor='white'), use_container_width=True)
+                
+            with col_g2:
+                q_ev_sol = f"SELECT strftime({COL_FECHA}, '%Y-%m') as Cosecha, sum(saldo_capital_total_890_c1)/NULLIF(sum(capital_c1), 0) as Ratio FROM '{FILE_PATH}' {time_filter} AND uen='SOLIDAR' GROUP BY 1 ORDER BY 1"
+                st.plotly_chart(px.line(duckdb.query(q_ev_sol).df(), x='Cosecha', y='Ratio', title="Ratio C1 Global - SOLIDAR", markers=True, color_discrete_sequence=['#d62728']).update_layout(yaxis_tickformat='.1%', plot_bgcolor='white'), use_container_width=True)
+
+            st.divider()
+            # 3. Top 4 Productos Críticos (Evolución Temporal) - GRÁFICAS RESTAURADAS
+            st.subheader("⚠️ Top 4 Productos Críticos (Evolución Temporal)")
+            col_t1, col_t2 = st.columns(2)
+            
+            with col_t1:
+                # Top 4 PR
+                q_top4_names_pr = f"SELECT producto_agrupado FROM '{FILE_PATH}' WHERE uen='PR' GROUP BY 1 ORDER BY sum(saldo_capital_total_c2)/NULLIF(sum(capital_c2), 0) DESC LIMIT 4"
+                list_pr = [r[0] for r in duckdb.query(q_top4_names_pr).fetchall()]
+                if list_pr:
+                    q_pr_trend = f"SELECT strftime({COL_FECHA}, '%Y-%m') as Cosecha, producto_agrupado, sum(saldo_capital_total_c2)/NULLIF(sum(capital_c2), 0) as Ratio FROM '{FILE_PATH}' WHERE producto_agrupado IN ('{"', '".join(list_pr)}') AND {COL_FECHA} >= (SELECT max({COL_FECHA}) - INTERVAL 24 MONTH FROM '{FILE_PATH}') GROUP BY 1, 2 ORDER BY 1"
+                    st.plotly_chart(px.line(duckdb.query(q_pr_trend).df(), x='Cosecha', y='Ratio', color='producto_agrupado', title="Productos Críticos C2 - PR", markers=True).update_layout(yaxis_tickformat='.1%', plot_bgcolor='white'), use_container_width=True)
+
+            with col_t2:
+                # Top 4 SOLIDAR
+                q_top4_names_sol = f"SELECT producto_agrupado FROM '{FILE_PATH}' WHERE uen='SOLIDAR' GROUP BY 1 ORDER BY sum(saldo_capital_total_890_c1)/NULLIF(sum(capital_c1), 0) DESC LIMIT 4"
+                list_sol = [r[0] for r in duckdb.query(q_top4_names_sol).fetchall()]
+                if list_sol:
+                    q_sol_trend = f"SELECT strftime({COL_FECHA}, '%Y-%m') as Cosecha, producto_agrupado, sum(saldo_capital_total_890_c1)/NULLIF(sum(capital_c1), 0) as Ratio FROM '{FILE_PATH}' WHERE producto_agrupado IN ('{"', '".join(list_sol)}') AND {COL_FECHA} >= (SELECT max({COL_FECHA}) - INTERVAL 24 MONTH FROM '{FILE_PATH}') GROUP BY 1, 2 ORDER BY 1"
+                    st.plotly_chart(px.line(duckdb.query(q_sol_trend).df(), x='Cosecha', y='Ratio', color='producto_agrupado', title="Productos Críticos C1 - SOLIDAR", markers=True).update_layout(yaxis_tickformat='.1%', plot_bgcolor='white'), use_container_width=True)
 
         with tab3:
             st.title("📍 Detalle de Desempeño")
             
-            # 1. RESUMEN NARRATIVO
-            st.subheader("📝 Resumen de Hallazgos (Global PR)")
-            q_stats = f"""
-                SELECT nombre_sucursal, sum(saldo_capital_total_c2)/NULLIF(sum(capital_c2), 0) as Ratio 
-                FROM '{FILE_PATH}' WHERE uen='PR' GROUP BY 1 ORDER BY 2 DESC
-            """
-            df_stats = duckdb.query(q_stats).df().dropna()
-            if not df_stats.empty:
-                peor_suc, peor_val = df_stats.iloc[0]['nombre_sucursal'], df_stats.iloc[0]['Ratio']
-                mejor_suc, mejor_val = df_stats.iloc[-1]['nombre_sucursal'], df_stats.iloc[-1]['Ratio']
-                
-                st.markdown(f"""
-                * La sucursal con el **riesgo más alto** actualmente es **{peor_suc}** con un ratio de **{peor_val:.2%}**.
-                * La sucursal con el **mejor desempeño** es **{mejor_suc}** con un ratio de **{mejor_val:.2%}**.
-                * *Referencia basada en el comportamiento acumulado de los últimos 24 meses.*
-                """)
+            # 1. RESUMEN NARRATIVO (PR Y SOLIDAR COMPLETOS)
+            st.subheader("📝 Resumen de Hallazgos")
+            c_res1, c_res2 = st.columns(2)
+            
+            with c_res1:
+                st.markdown("#### UEN: PR")
+                q_pr_res = f"SELECT nombre_sucursal, sum(saldo_capital_total_c2)/NULLIF(sum(capital_c2), 0) as Ratio FROM '{FILE_PATH}' WHERE uen='PR' GROUP BY 1 ORDER BY 2 DESC"
+                df_pr_res = duckdb.query(q_pr_res).df().dropna()
+                if not df_pr_res.empty:
+                    st.write(f"🚩 **Punto Crítico:** Sucursal **{df_pr_res.iloc[0]['nombre_sucursal']}** ({df_pr_res.iloc[0]['Ratio']:.2%})")
+                    st.write(f"✅ **Mejor Desempeño:** Sucursal **{df_pr_res.iloc[-1]['nombre_sucursal']}** ({df_pr_res.iloc[-1]['Ratio']:.2%})")
+
+            with c_res2:
+                st.markdown("#### UEN: SOLIDAR")
+                q_sol_res = f"SELECT nombre_sucursal, sum(saldo_capital_total_890_c1)/NULLIF(sum(capital_c1), 0) as Ratio FROM '{FILE_PATH}' WHERE uen='SOLIDAR' GROUP BY 1 ORDER BY 2 DESC"
+                df_sol_res = duckdb.query(q_sol_res).df().dropna()
+                if not df_sol_res.empty:
+                    st.write(f"🚩 **Punto Crítico:** Sucursal **{df_sol_res.iloc[0]['nombre_sucursal']}** ({df_sol_res.iloc[0]['Ratio']:.2%})")
+                    st.write(f"✅ **Mejor Desempeño:** Sucursal **{df_sol_res.iloc[-1]['nombre_sucursal']}** ({df_sol_res.iloc[-1]['Ratio']:.2%})")
 
             st.divider()
             # 2. MATRIZ SUCURSAL VS PRODUCTO
@@ -139,9 +153,9 @@ try:
                 st.table(duckdb.query(q_s_sol).df().fillna(0).set_index('Sucursal').style.format("{:.2%}"))
 
     else:
-        st.error(f"Error: No se encontró el archivo '{FILE_PATH}'.")
+        st.error(f"Error: Archivo '{FILE_PATH}' no encontrado.")
 
 except Exception as e:
     st.error(f"Error técnico detectado: {e}")
 
-st.caption("Dashboard de Crédito | Michel Ovalle | Engine: DuckDB")
+st.caption("Dashboard Vintage Pro | Michel Ovalle | Engine: DuckDB | Ventana: 24 meses")
