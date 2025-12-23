@@ -33,47 +33,40 @@ def build_in_clause(filter_list):
     return "('" + "', '".join(cleaned) + "')"
 
 def add_stats_to_df(df):
-    """Añade estadísticas al final asegurando que los nombres de columna coincidan"""
+    """Añade estadísticas al final de forma robusta"""
     if df.empty: return df
     
-    # Identificamos columnas de Mes (Mes 1, Mes 2...)
     mes_cols = [c for c in df.columns if 'Mes ' in c]
     df[mes_cols] = df[mes_cols].apply(pd.to_numeric, errors='coerce')
     
-    # Preparamos las filas de estadísticas
+    # Calculamos stats antes de concatenar para evitar errores de tipo
     stats_data = {
         'Mes originacion': ['Promedio', 'Máximo', 'Mínimo'],
         'Capital Inicial': [df['Capital Inicial'].mean(), np.nan, np.nan]
     }
     
-    # Llenamos los datos de los meses para las estadísticas
     for col in mes_cols:
         stats_data[col] = [df[col].mean(), df[col].max(), df[col].min()]
     
     stats_df = pd.DataFrame(stats_data)
-    
-    # Unimos manteniendo la estructura limpia
     return pd.concat([df, stats_df], ignore_index=True)
 
 def get_vintage_matrix(pref_num, pref_den, uen, filtros):
-    """Consulta los datos y renombra columnas en Python para evitar fallos"""
+    """Consulta y renombra columnas para asegurar que los títulos aparezcan"""
     where = f"WHERE uen = '{uen}' AND {COL_FECHA} >= (SELECT max({COL_FECHA}) - INTERVAL 24 MONTH FROM '{FILE_PATH}')"
     for key, col in [('suc', 'nombre_sucursal'), ('prod', 'producto_agrupado'), ('orig', 'PR_Origen_Limpio')]:
         clause = build_in_clause(filtros.get(key))
         if clause: where += f" AND {col} IN {clause}"
     
-    # Query con nombres base para evitar problemas de alias
     cols = f"strftime({COL_FECHA}, '%Y-%m') as cosecha_val, sum({pref_den}1) as cap_val"
     for i in range(1, 25):
         cols += f", sum({pref_num}{i}) / NULLIF(sum({pref_den}{i}), 0) as 'Mes {i}'"
     
     df_raw = duckdb.query(f"SELECT {cols} FROM '{FILE_PATH}' {where} GROUP BY 1 ORDER BY 1").df()
-    
     if df_raw.empty: return df_raw
     
-    # RENOMBRAMIENTO CRÍTICO: Aquí forzamos los nombres que pediste
+    # Renombrado solicitado por Michel
     df_raw = df_raw.rename(columns={'cosecha_val': 'Mes originacion', 'cap_val': 'Capital Inicial'})
-    
     return add_stats_to_df(df_raw)
 
 # --- INICIO DASHBOARD ---
@@ -96,11 +89,13 @@ try:
                 m_v = get_vintage_matrix(p_num, p_den, uen, filtros)
                 if not m_v.empty:
                     mes_cols = [c for c in m_v.columns if 'Mes ' in c]
-                    # Visualización con encabezados completos y datos restaurados
+                    # FIX CRÍTICO: Usamos el índice de filas para evitar el error de ambigüedad
+                    idx_cosechas = m_v.index[:-3] 
+                    
                     st.dataframe(
                         m_v.style.format({"Capital Inicial": "${:,.0f}"} | {c: "{:.2%}" for c in mes_cols}, na_rep="")
-                        .background_gradient(cmap='RdYlGn_r', axis=None, subset=(m_v.index[:-3], mes_cols))
-                        .set_properties(**{'color': 'black'}, subset=mes_cols + ['Mes originacion', 'Capital Inicial'])
+                        .background_gradient(cmap='RdYlGn_r', axis=None, subset=pd.IndexSlice[idx_cosechas, mes_cols])
+                        .set_properties(**{'color': 'black'}, subset=m_v.columns)
                         .highlight_null(color='white'), 
                         use_container_width=True,
                         hide_index=True
@@ -109,12 +104,10 @@ try:
 
         with tab2:
             st.title("Análisis de Maduración y Comportamiento")
-            t_f = f"WHERE {COL_FECHA} >= (SELECT max({COL_FECHA}) - INTERVAL 24 MONTH FROM '{FILE_PATH}')"
-            
-            # Curvas de Maduración (18 meses)
-            m_v_pr = get_vintage_matrix('saldo_capital_total_c', 'capital_c', 'PR', filtros)
-            if not m_v_pr.empty:
-                df_c = m_v_pr.iloc[:-3] 
+            # Maduración (18 meses)
+            m_v_mad = get_vintage_matrix('saldo_capital_total_c', 'capital_c', 'PR', filtros)
+            if not m_v_mad.empty:
+                df_c = m_v_mad.iloc[:-3] 
                 fig_m = go.Figure()
                 for i, row in df_c.tail(18).iterrows():
                     cos = str(row['Mes originacion'])
@@ -125,7 +118,9 @@ try:
                     legend=dict(orientation="h", yanchor="top", y=-0.25, xanchor="center", x=0.5), margin=dict(b=100))
                 st.plotly_chart(fig_m, use_container_width=True)
             
-            # Gráficas de evolución vertical...
+            # Evolución Vertical...
+            st.divider()
+            t_f = f"WHERE {COL_FECHA} >= (SELECT max({COL_FECHA}) - INTERVAL 24 MONTH FROM '{FILE_PATH}')"
             for uen, col_r, col_c, tit_u, line_c in [('PR', 'saldo_capital_total_c2', 'capital_c2', 'PR', 'blue'), 
                                                      ('SOLIDAR', 'saldo_capital_total_890_c1', 'capital_c1', 'SOLIDAR', 'red')]:
                 q = f"SELECT strftime({COL_FECHA}, '%Y-%m') as Cosecha, sum({col_r})/NULLIF(sum({col_c}),0) as Ratio FROM '{FILE_PATH}' {t_f} AND uen='{uen}' GROUP BY 1 ORDER BY 1"
@@ -134,19 +129,7 @@ try:
 
         with tab3:
             st.title("📍 Detalle de Desempeño")
-            # Resúmenes y Matrices de Sucursal (Mismo blindaje de color negro)
-            for uen, col_r, col_c, coh in [('PR', 'saldo_capital_total_c2', 'capital_c2', 'C2'), ('SOLIDAR', 'saldo_capital_total_890_c1', 'capital_c1', 'C1')]:
-                q_sn = f"SELECT nombre_sucursal as n, sum({col_r})/NULLIF(sum({col_c}), 0) as r FROM '{FILE_PATH}' WHERE uen='{uen}' GROUP BY 1 ORDER BY 2 DESC LIMIT 1"
-                res_s = duckdb.query(q_sn).df()
-                if not res_s.empty:
-                    sn, sr = res_s.iloc[0]['n'], res_s.iloc[0]['r']
-                    q_pn = f"SELECT producto_agrupado as n, sum({col_r})/NULLIF(sum({col_c}), 0) as r FROM '{FILE_PATH}' WHERE uen='{uen}' AND nombre_sucursal = '{sn}' GROUP BY 1 ORDER BY 2 DESC LIMIT 1"
-                    res_p = duckdb.query(q_pn).df()
-                    pn, pr = res_p.iloc[0]['n'], res_p.iloc[0]['r']
-                    st.write(f"**Para la uen:{uen}**")
-                    st.write(f"La sucursal **{sn}**, tiene el porcentaje más alto con **{sr:.2%}**, siendo el producto_agrupado **{pn}** el que más participación tiene, con un **{pr:.2%}** para el cohorte {coh}.")
-            
-            st.divider()
+            # Matrices de Sucursal (Blindadas con color negro)
             c_mx1, c_mx2 = st.columns(2)
             for uen, col_r, col_c, col_obj in [('PR', 'saldo_capital_total_c2', 'capital_c2', c_mx1), ('SOLIDAR', 'saldo_capital_total_890_c1', 'capital_c1', c_mx2)]:
                 with col_obj:
@@ -161,4 +144,4 @@ try:
 except Exception as e:
     st.error(f"Error técnico detectado: {e}")
 
-st.caption("Dashboard Vintage Pro v45.0 | Michel Ovalle | Engine: DuckDB")
+st.caption("Dashboard Vintage Pro v46.0 | Michel Ovalle | Engine: DuckDB")
