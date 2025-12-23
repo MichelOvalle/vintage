@@ -109,24 +109,30 @@ try:
             st.divider()
             st.subheader("⚠️ Evolución de Productos Críticos")
             
+            # --- FILTRO DE PRODUCTOS SIN NOMBRE ---
             for uen, col_r, col_c, tit in [('PR', 'saldo_capital_total_c2', 'capital_c2', 'PR'), ('SOLIDAR', 'saldo_capital_total_890_c1', 'capital_c1', 'SOLIDAR')]:
-                # RANKING: Detectamos los 4 nombres únicos
-                qn = f"SELECT COALESCE(producto_agrupado, 'SIN NOMBRE') as P FROM '{FILE_PATH}' {t_f} AND uen='{uen}' GROUP BY 1 ORDER BY sum({col_r})/NULLIF(sum({col_c}), 0) DESC LIMIT 4"
+                # Ranking: Filtramos explicitamente NULL, vacíos y el texto 'SIN NOMBRE'
+                qn = f"""
+                    SELECT producto_agrupado as P 
+                    FROM '{FILE_PATH}' 
+                    {t_f} AND uen='{uen}' 
+                    AND producto_agrupado IS NOT NULL 
+                    AND producto_agrupado != '' 
+                    AND UPPER(producto_agrupado) != 'SIN NOMBRE'
+                    GROUP BY 1 
+                    ORDER BY sum({col_r})/NULLIF(sum({col_c}), 0) DESC 
+                    LIMIT 4
+                """
                 list_p = [str(r[0]) for r in duckdb.query(qn).fetchall()]
-                
-                # DIAGNÓSTICO (Expandible para no estorbar)
-                with st.expander(f"Depuración: Productos detectados en {tit}"):
-                    st.write(f"Buscando histórico para: {list_p}")
 
                 if list_p:
                     p_clause = build_in_clause(list_p)
-                    # CONSULTA DE TENDENCIA: Corregida para no perder datos por alias
                     qt = f"""
                         SELECT strftime({COL_FECHA}, '%Y-%m') as Cosecha, 
-                               COALESCE(producto_agrupado, 'SIN NOMBRE') as Producto, 
+                               producto_agrupado as Producto, 
                                sum({col_r})/NULLIF(sum({col_c}),0) as Ratio 
                         FROM '{FILE_PATH}' 
-                        WHERE uen='{uen}' AND COALESCE(producto_agrupado, 'SIN NOMBRE') IN {p_clause} 
+                        WHERE uen='{uen}' AND producto_agrupado IN {p_clause} 
                               AND {COL_FECHA} >= (SELECT max({COL_FECHA}) - INTERVAL 24 MONTH FROM '{FILE_PATH}') 
                         GROUP BY 1, 2 ORDER BY 1
                     """
@@ -138,7 +144,7 @@ try:
 
         with tab3:
             st.title("📍 Detalle de Desempeño")
-            # Resúmenes Narrativos
+            # Narrativas PR y SOLIDAR
             for uen, col_r, col_c, coh in [('PR', 'saldo_capital_total_c2', 'capital_c2', 'C2'), ('SOLIDAR', 'saldo_capital_total_890_c1', 'capital_c1', 'C1')]:
                 q_sn = f"SELECT nombre_sucursal as n, sum({col_r})/NULLIF(sum({col_c}), 0) as r FROM '{FILE_PATH}' WHERE uen='{uen}' GROUP BY 1 ORDER BY 2 DESC LIMIT 1"
                 res_s = duckdb.query(q_sn).df()
@@ -181,4 +187,4 @@ try:
 except Exception as e:
     st.error(f"Error técnico detectado: {e}")
 
-st.caption("Dashboard Vintage Pro v39.0 | Michel Ovalle | Engine: DuckDB")
+st.caption("Dashboard Vintage Pro v40.0 | Michel Ovalle | Engine: DuckDB")
