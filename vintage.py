@@ -81,7 +81,7 @@ try:
         with tab2:
             st.title("Análisis de Maduración y Comportamiento")
             t_f = f"WHERE {COL_FECHA} >= (SELECT max({COL_FECHA}) - INTERVAL 24 MONTH FROM '{FILE_PATH}')"
-            # Gráficas (Curvas, Tendencias Globales y Top 4)
+            # Curvas, Tendencias Globales y Top 4
             m_v_pr = get_vintage_matrix('saldo_capital_total_c', 'capital_c', 'PR', filtros)
             if not m_v_pr.empty:
                 df_c = m_v_pr.iloc[:-3]
@@ -112,7 +112,7 @@ try:
 
         with tab3:
             st.title("📍 Detalle de Desempeño")
-            # Resúmenes Narrativos
+            # 1. RESUMENES NARRATIVOS
             for uen, col_r, col_c, coh in [('PR', 'saldo_capital_total_c2', 'capital_c2', 'C2'), ('SOLIDAR', 'saldo_capital_total_890_c1', 'capital_c1', 'C1')]:
                 q_sn = f"SELECT nombre_sucursal as n, sum({col_r})/NULLIF(sum({col_c}), 0) as r FROM '{FILE_PATH}' WHERE uen='{uen}' GROUP BY 1 ORDER BY 2 DESC LIMIT 1"
                 res_s = duckdb.query(q_sn).df()
@@ -125,7 +125,7 @@ try:
                     st.write(f"La sucursal **{sn}**, tiene el porcentaje más alto con **{sr:.2%}**, siendo el producto_agrupado **{pn}** el que más participación tiene, con un **{pr:.2%}** para el cohorte {coh}.")
             
             st.divider()
-            # Matrices Blindadas contra NaN en JSON
+            # 2. MATRICES CRUZADAS
             c_mx1, c_mx2 = st.columns(2)
             for uen, col_r, col_c, col_obj in [('PR', 'saldo_capital_total_c2', 'capital_c2', c_mx1), ('SOLIDAR', 'saldo_capital_total_890_c1', 'capital_c1', c_mx2)]:
                 with col_obj:
@@ -133,11 +133,26 @@ try:
                     q = f"SELECT COALESCE(nombre_sucursal, 'N/A') as S, COALESCE(producto_agrupado, 'N/A') as P, sum({col_r})/NULLIF(sum({col_c}), 0) as R FROM '{FILE_PATH}' WHERE uen='{uen}' GROUP BY 1, 2"
                     df_m = duckdb.query(q).df()
                     if not df_m.empty:
-                        # FIX CRÍTICO: Convertimos index y columnas a string para evitar NaN en el JSON del navegador
                         df_p = df_m.pivot(index='S', columns='P', values='R').fillna(0)
-                        df_p.index = df_p.index.astype(str)
-                        df_p.columns = df_p.columns.astype(str)
+                        df_p.index, df_p.columns = df_p.index.astype(str), df_p.columns.astype(str)
                         st.dataframe(df_p.style.format("{:.2%}").background_gradient(cmap='RdYlGn_r', axis=None), use_container_width=True)
+
+            st.divider()
+            # 3. RANKINGS TOP 10 (Restaurados)
+            c_rk1, c_rk2 = st.columns(2)
+            with c_rk1:
+                st.markdown("#### Top 10 Sucursales Riesgo PR")
+                q_rk_pr = f"SELECT COALESCE(nombre_sucursal, 'N/A') as Sucursal, sum(saldo_capital_total_c2)/NULLIF(sum(capital_c2), 0) as 'Ratio C2' FROM '{FILE_PATH}' WHERE uen='PR' GROUP BY 1 ORDER BY 2 DESC LIMIT 10"
+                df_rk_pr = duckdb.query(q_rk_pr).df().fillna(0)
+                if not df_rk_pr.empty:
+                    st.table(df_rk_pr.set_index('Sucursal').style.format("{:.2%}"))
+
+            with c_rk2:
+                st.markdown("#### Top 10 Sucursales Riesgo SOLIDAR")
+                q_rk_sol = f"SELECT COALESCE(nombre_sucursal, 'N/A') as Sucursal, sum(saldo_capital_total_890_c1)/NULLIF(sum(capital_c1), 0) as 'Ratio C1' FROM '{FILE_PATH}' WHERE uen='SOLIDAR' GROUP BY 1 ORDER BY 2 DESC LIMIT 10"
+                df_rk_sol = duckdb.query(q_rk_sol).df().fillna(0)
+                if not df_rk_sol.empty:
+                    st.table(df_rk_sol.set_index('Sucursal').style.format("{:.2%}"))
 
     else:
         st.error(f"Archivo '{FILE_PATH}' no encontrado.")
