@@ -9,7 +9,7 @@ import os
 # 1. Configuración de página
 st.set_page_config(page_title="Análisis Vintage Pro", layout="wide")
 
-# Estilos CSS
+# Estilos CSS para texto negro y limpieza visual
 st.markdown("""
     <style>
     .main { background-color: #FFFFFF; }
@@ -33,6 +33,7 @@ def build_in_clause(filter_list):
     return "('" + "', '".join(cleaned) + "')"
 
 def add_stats_to_df(df):
+    """Añade filas de Promedio, Máximo y Mínimo al final del DataFrame"""
     if df.empty: return df
     mes_cols = [c for c in df.columns if 'Mes' in c]
     df[mes_cols] = df[mes_cols].apply(pd.to_numeric, errors='coerce')
@@ -81,7 +82,8 @@ try:
         with tab2:
             st.title("Análisis de Maduración y Comportamiento")
             t_f = f"WHERE {COL_FECHA} >= (SELECT max({COL_FECHA}) - INTERVAL 24 MONTH FROM '{FILE_PATH}')"
-            # Curvas, Tendencias Globales y Top 4
+            
+            # 1. Curvas de Maduración PR
             m_v_pr = get_vintage_matrix('saldo_capital_total_c', 'capital_c', 'PR', filtros)
             if not m_v_pr.empty:
                 df_c = m_v_pr.iloc[:-3]
@@ -89,26 +91,32 @@ try:
                 for cos in df_c.tail(8).index:
                     fila = df_c.loc[cos].drop('Cap_Inicial').dropna()
                     fig_m.add_trace(go.Scatter(x=fila.index, y=fila.values, mode='lines+markers', name=cos))
-                fig_m.update_layout(title="Maduración - PR (Últimas 8 Cosechas)", yaxis_tickformat='.1%', plot_bgcolor='white')
+                fig_m.update_layout(title="Maduración - PR (Últimas 8 Cosechas)", yaxis_tickformat='.1%', plot_bgcolor='white', xaxis_title="Meses de Maduración", yaxis_title="Ratio de Riesgo")
                 st.plotly_chart(fig_m, use_container_width=True)
             
+            st.divider()
             c1, c2 = st.columns(2)
+            # CORRECCIÓN DE EJES: Nombres completos en lugar de C y R
             with c1:
-                q = f"SELECT strftime({COL_FECHA}, '%Y-%m') as C, sum(saldo_capital_total_c2)/NULLIF(sum(capital_c2),0) as R FROM '{FILE_PATH}' {t_f} AND uen='PR' GROUP BY 1 ORDER BY 1"
-                st.plotly_chart(px.line(duckdb.query(q).df(), x='C', y='R', title="Evolución C2 Global - PR", markers=True).update_layout(yaxis_tickformat='.1%', plot_bgcolor='white'))
+                q = f"SELECT strftime({COL_FECHA}, '%Y-%m') as Cosecha, sum(saldo_capital_total_c2)/NULLIF(sum(capital_c2),0) as Ratio FROM '{FILE_PATH}' {t_f} AND uen='PR' GROUP BY 1 ORDER BY 1"
+                df_q = duckdb.query(q).df()
+                st.plotly_chart(px.line(df_q, x='Cosecha', y='Ratio', title="Evolución C2 Global - PR", markers=True, labels={'Cosecha': 'Cosecha', 'Ratio': 'Ratio %'}).update_layout(yaxis_tickformat='.2%', plot_bgcolor='white', margin=dict(l=60, r=40, b=60, t=60)))
+                
                 qn = f"SELECT producto_agrupado FROM '{FILE_PATH}' WHERE uen='PR' GROUP BY 1 ORDER BY sum(saldo_capital_total_c2)/NULLIF(sum(capital_c2),0) DESC LIMIT 4"
                 ln = [str(r[0]) for r in duckdb.query(qn).fetchall()]
                 if ln:
-                    qt = f"SELECT strftime({COL_FECHA}, '%Y-%m') as C, producto_agrupado as P, sum(saldo_capital_total_c2)/NULLIF(sum(capital_c2),0) as R FROM '{FILE_PATH}' WHERE P IN {build_in_clause(ln)} AND {COL_FECHA} >= (SELECT max({COL_FECHA}) - INTERVAL 24 MONTH FROM '{FILE_PATH}') GROUP BY 1, 2 ORDER BY 1"
-                    st.plotly_chart(px.line(duckdb.query(qt).df(), x='C', y='R', color='P', title="Top 4 Críticos PR", markers=True).update_layout(yaxis_tickformat='.1%', plot_bgcolor='white'))
+                    qt = f"SELECT strftime({COL_FECHA}, '%Y-%m') as Cosecha, producto_agrupado as Producto, sum(saldo_capital_total_c2)/NULLIF(sum(capital_c2),0) as Ratio FROM '{FILE_PATH}' WHERE Producto IN {build_in_clause(ln)} AND {COL_FECHA} >= (SELECT max({COL_FECHA}) - INTERVAL 24 MONTH FROM '{FILE_PATH}') GROUP BY 1, 2 ORDER BY 1"
+                    st.plotly_chart(px.line(duckdb.query(qt).df(), x='Cosecha', y='Ratio', color='Producto', title="Top 4 Críticos PR", markers=True, labels={'Cosecha': 'Cosecha', 'Ratio': 'Ratio %'}).update_layout(yaxis_tickformat='.2%', plot_bgcolor='white', margin=dict(l=60, r=40, b=60, t=60)))
+            
             with c2:
-                q = f"SELECT strftime({COL_FECHA}, '%Y-%m') as C, sum(saldo_capital_total_890_c1)/NULLIF(sum(capital_c1),0) as R FROM '{FILE_PATH}' {t_f} AND uen='SOLIDAR' GROUP BY 1 ORDER BY 1"
-                st.plotly_chart(px.line(duckdb.query(q).df(), x='C', y='R', title="Evolución C1 Global - SOLIDAR", markers=True, color_discrete_sequence=['red']).update_layout(yaxis_tickformat='.1%', plot_bgcolor='white'))
+                q = f"SELECT strftime({COL_FECHA}, '%Y-%m') as Cosecha, sum(saldo_capital_total_890_c1)/NULLIF(sum(capital_c1),0) as Ratio FROM '{FILE_PATH}' {t_f} AND uen='SOLIDAR' GROUP BY 1 ORDER BY 1"
+                st.plotly_chart(px.line(duckdb.query(q).df(), x='Cosecha', y='Ratio', title="Evolución C1 Global - SOLIDAR", markers=True, color_discrete_sequence=['red'], labels={'Cosecha': 'Cosecha', 'Ratio': 'Ratio %'}).update_layout(yaxis_tickformat='.2%', plot_bgcolor='white', margin=dict(l=60, r=40, b=60, t=60)))
+                
                 qn_s = f"SELECT producto_agrupado FROM '{FILE_PATH}' WHERE uen='SOLIDAR' GROUP BY 1 ORDER BY sum(saldo_capital_total_890_c1)/NULLIF(sum(capital_c1),0) DESC LIMIT 4"
                 ln_s = [str(r[0]) for r in duckdb.query(qn_s).fetchall()]
                 if ln_s:
-                    qt_s = f"SELECT strftime({COL_FECHA}, '%Y-%m') as C, producto_agrupado as P, sum(saldo_capital_total_890_c1)/NULLIF(sum(capital_c1),0) as R FROM '{FILE_PATH}' WHERE P IN {build_in_clause(ln_s)} AND {COL_FECHA} >= (SELECT max({COL_FECHA}) - INTERVAL 24 MONTH FROM '{FILE_PATH}') GROUP BY 1, 2 ORDER BY 1"
-                    st.plotly_chart(px.line(duckdb.query(qt_s).df(), x='C', y='R', color='P', title="Top 4 Críticos SOLIDAR", markers=True).update_layout(yaxis_tickformat='.1%', plot_bgcolor='white'))
+                    qt_s = f"SELECT strftime({COL_FECHA}, '%Y-%m') as Cosecha, producto_agrupado as Producto, sum(saldo_capital_total_890_c1)/NULLIF(sum(capital_c1),0) as Ratio FROM '{FILE_PATH}' WHERE Producto IN {build_in_clause(ln_s)} AND {COL_FECHA} >= (SELECT max({COL_FECHA}) - INTERVAL 24 MONTH FROM '{FILE_PATH}') GROUP BY 1, 2 ORDER BY 1"
+                    st.plotly_chart(px.line(duckdb.query(qt_s).df(), x='Cosecha', y='Ratio', color='Producto', title="Top 4 Críticos SOLIDAR", markers=True, labels={'Cosecha': 'Cosecha', 'Ratio': 'Ratio %'}).update_layout(yaxis_tickformat='.2%', plot_bgcolor='white', margin=dict(l=60, r=40, b=60, t=60)))
 
         with tab3:
             st.title("📍 Detalle de Desempeño")
@@ -138,7 +146,7 @@ try:
                         st.dataframe(df_p.style.format("{:.2%}").background_gradient(cmap='RdYlGn_r', axis=None), use_container_width=True)
 
             st.divider()
-            # 3. RANKINGS TOP 10 (Restaurados)
+            # 3. RANKINGS TOP 10
             c_rk1, c_rk2 = st.columns(2)
             with c_rk1:
                 st.markdown("#### Top 10 Sucursales Riesgo PR")
