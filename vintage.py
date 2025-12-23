@@ -84,21 +84,22 @@ try:
             st.title("Análisis de Maduración y Comportamiento")
             t_f = f"WHERE {COL_FECHA} >= (SELECT max({COL_FECHA}) - INTERVAL 24 MONTH FROM '{FILE_PATH}')"
             
-            # 1. Curvas de Maduración PR
+            # 1. Curvas de Maduración PR - ACTUALIZADO A 12 COSECHAS
             m_v_pr = get_vintage_matrix('saldo_capital_total_c', 'capital_c', 'PR', filtros)
             if not m_v_pr.empty:
-                df_c = m_v_pr.iloc[:-3]
+                df_c = m_v_pr.iloc[:-3] # Quitamos las filas de estadísticas
                 fig_m = go.Figure()
-                for cos in df_c.tail(8).index:
+                # Mostramos las últimas 12 cosechas para análisis anual
+                for cos in df_c.tail(12).index:
                     fila = df_c.loc[cos].drop('Cap_Inicial').dropna()
                     fig_m.add_trace(go.Scatter(x=fila.index, y=fila.values, mode='lines+markers', name=cos))
-                fig_m.update_layout(title="Maduración - PR (Últimas 8 Cosechas)", yaxis_tickformat='.1%', plot_bgcolor='white', xaxis_title="Meses de Maduración", yaxis_title="Ratio %")
+                fig_m.update_layout(title="Maduración - PR (Últimas 12 Cosechas)", yaxis_tickformat='.1%', plot_bgcolor='white', xaxis_title="Meses de Maduración", yaxis_title="Ratio %")
                 st.plotly_chart(fig_m, use_container_width=True)
             
             st.divider()
             st.subheader("Tendencias de Comportamiento Global (24 Meses)")
             
-            # 2. Evolución Global - PR (STACKED VERTICAL)
+            # 2. Evolución Global - PR
             q_p = f"SELECT strftime({COL_FECHA}, '%Y-%m') as Cosecha, sum(saldo_capital_total_c2)/NULLIF(sum(capital_c2),0) as Ratio FROM '{FILE_PATH}' {t_f} AND uen='PR' GROUP BY 1 ORDER BY 1"
             df_ev_pr = duckdb.query(q_p).df()
             fig_ev_pr = px.line(df_ev_pr, x='Cosecha', y='Ratio', title="Evolución C2 Global - PR", markers=True, labels={'Cosecha': 'Cosecha', 'Ratio': 'Ratio %'})
@@ -106,7 +107,7 @@ try:
             fig_ev_pr.update_layout(yaxis_tickformat='.2%', plot_bgcolor='white', margin=dict(l=60, r=40, b=80, t=60))
             st.plotly_chart(fig_ev_pr, use_container_width=True)
             
-            # 3. Evolución Global - SOLIDAR (STACKED VERTICAL)
+            # 3. Evolución Global - SOLIDAR
             q_s = f"SELECT strftime({COL_FECHA}, '%Y-%m') as Cosecha, sum(saldo_capital_total_890_c1)/NULLIF(sum(capital_c1),0) as Ratio FROM '{FILE_PATH}' {t_f} AND uen='SOLIDAR' GROUP BY 1 ORDER BY 1"
             df_ev_sol = duckdb.query(q_s).df()
             fig_ev_sol = px.line(df_ev_sol, x='Cosecha', y='Ratio', title="Evolución C1 Global - SOLIDAR", markers=True, color_discrete_sequence=['red'], labels={'Cosecha': 'Cosecha', 'Ratio': 'Ratio %'})
@@ -117,7 +118,7 @@ try:
             st.divider()
             st.subheader("⚠️ Evolución de Productos Críticos (Top 4)")
             
-            # 4. Top 4 PR (STACKED VERTICAL)
+            # 4. Top 4 PR
             qn = f"SELECT producto_agrupado FROM '{FILE_PATH}' WHERE uen='PR' GROUP BY 1 ORDER BY sum(saldo_capital_total_c2)/NULLIF(sum(capital_c2),0) DESC LIMIT 4"
             ln = [str(r[0]) for r in duckdb.query(qn).fetchall()]
             if ln:
@@ -128,7 +129,7 @@ try:
                 fig_top_pr.update_layout(yaxis_tickformat='.2%', plot_bgcolor='white', margin=dict(b=80))
                 st.plotly_chart(fig_top_pr, use_container_width=True)
             
-            # 5. Top 4 SOLIDAR (STACKED VERTICAL)
+            # 5. Top 4 SOLIDAR
             qn_s = f"SELECT producto_agrupado FROM '{FILE_PATH}' WHERE uen='SOLIDAR' GROUP BY 1 ORDER BY sum(saldo_capital_total_890_c1)/NULLIF(sum(capital_c1),0) DESC LIMIT 4"
             ln_s = [str(r[0]) for r in duckdb.query(qn_s).fetchall()]
             if ln_s:
@@ -141,7 +142,7 @@ try:
 
         with tab3:
             st.title("📍 Detalle de Desempeño")
-            # 1. RESUMENES NARRATIVOS
+            # Resúmenes Narrativos
             for uen, col_r, col_c, coh in [('PR', 'saldo_capital_total_c2', 'capital_c2', 'C2'), ('SOLIDAR', 'saldo_capital_total_890_c1', 'capital_c1', 'C1')]:
                 q_sn = f"SELECT nombre_sucursal as n, sum({col_r})/NULLIF(sum({col_c}), 0) as r FROM '{FILE_PATH}' WHERE uen='{uen}' GROUP BY 1 ORDER BY 2 DESC LIMIT 1"
                 res_s = duckdb.query(q_sn).df()
@@ -154,7 +155,6 @@ try:
                     st.write(f"La sucursal **{sn}**, tiene el porcentaje más alto con **{sr:.2%}**, siendo el producto_agrupado **{pn}** el que más participación tiene, con un **{pr:.2%}** para el cohorte {coh}.")
             
             st.divider()
-            # 2. MATRICES CRUZADAS
             c_mx1, c_mx2 = st.columns(2)
             for uen, col_r, col_c, col_obj in [('PR', 'saldo_capital_total_c2', 'capital_c2', c_mx1), ('SOLIDAR', 'saldo_capital_total_890_c1', 'capital_c1', c_mx2)]:
                 with col_obj:
@@ -167,7 +167,6 @@ try:
                         st.dataframe(df_p.style.format("{:.2%}").background_gradient(cmap='RdYlGn_r', axis=None), use_container_width=True)
 
             st.divider()
-            # 3. RANKINGS TOP 10
             c_rk1, c_rk2 = st.columns(2)
             with c_rk1:
                 st.markdown("#### Top 10 Sucursales Riesgo PR")
@@ -186,4 +185,4 @@ try:
 except Exception as e:
     st.error(f"Error técnico detectado: {e}")
 
-st.caption("Dashboard Vintage Pro v32.0 | Michel Ovalle | Engine: DuckDB")
+st.caption("Dashboard Vintage Pro v33.0 | Michel Ovalle | Engine: DuckDB")
