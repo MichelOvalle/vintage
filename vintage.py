@@ -182,4 +182,4 @@ try:
 except Exception as e:
     st.error(f"Error técnico detectado: {e}")
 
-st.caption("Dashboard Vintage Pro v47.0 | Michel Ovalle | Engine: DuckDB")
+st.caption("Dashboard Vintage | Michel Ovalle | Engine: DuckDB")
